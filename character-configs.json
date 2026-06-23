@@ -1,0 +1,39 @@
+{
+  "knight": {
+    "animations": {
+      "ready":              { "duration": 4.04, "loop": true },
+      "attack":             { "duration": 4.04, "loop": true },
+      "attack-reverse":     { "duration": 4.04, "loop": true },
+      "engage":             { "duration": 4.04, "loop": true },
+      "disengage":          { "duration": 4.04, "loop": true },
+      "spell-cast":         { "duration": 4.04, "loop": true },
+      "spell-cast-reverse": { "duration": 4.04, "loop": true },
+      "heavy-attack":       { "duration": 4.04, "loop": true },
+      "stab":               { "duration": 4.04, "loop": true },
+      "run":                { "duration": 4.04, "loop": true }
+    }
+  },
+  "skeleton-soldier": {
+    "animations": {
+      "skeleton-soldier-ready":  { "duration": 4.04, "loop": true },
+      "skeleton-soldier-attack":         { "duration": 4.04, "loop": true },
+      "skeleton-soldier-attack-reverse": { "duration": 4.04, "loop": true },
+      "skeleton-soldier-engage":          { "duration": 4.04, "loop": true },
+      "skeleton-soldier-disengage":      { "duration": 4.04, "loop": true }
+    }
+  },
+  "3d-knight": {
+    "animations": {
+      "3d-knight": { "duration": 15.041666666666666, "loop": true }
+    }
+  },
+  "john": {
+    "animations": {
+      "john-attack": { "duration": 4.041666666666667, "loop": true },
+      "john-sword-thrust": { "duration": 4.041666666666667, "loop": true },
+      "john-engage": { "duration": 4.041666666666667, "loop": true },
+      "john-shield-bash": { "duration": 4.041666666666667, "loop": true },
+      "john-swing": { "duration": 4.041666666666667, "loop": true }
+    }
+  }
+}
