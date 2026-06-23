@@ -1546,6 +1546,9 @@ export default function MockBattleClient() {
   const [stageReady, setStageReady] = useState(false);
   const [battleKey, setBattleKey] = useState(0);
   const [fightError, setFightError] = useState<string | null>(null);
+  // Auto-rewatch: when ON, a finished replay loops back into the same battle.
+  // In-memory only (not persisted) — a viewing preference for this round.
+  const [autoRewatch, setAutoRewatch] = useState(false);
 
   const controlsRef = useRef<{ replay: () => void } | null>(null);
   // Bridge: BattleStage points this at its live HP-bar repaint; the Display
@@ -1845,6 +1848,20 @@ export default function MockBattleClient() {
     setStageReady(false);
   }
 
+  // Auto-rewatch loop: once a replay's outcome is in, let the result card flash,
+  // then run the SAME restart the "Watch again" button does (setOutcome(null) +
+  // controlsRef.replay()). The cleanup cancels a pending rewatch if the user acts
+  // (Watch again / Edit parties), toggles it off, leaves replay, or unmounts — so
+  // it never double-restarts or fires after teardown.
+  useEffect(() => {
+    if (phase !== "replay" || !outcome || !autoRewatch) return;
+    const id = setTimeout(() => {
+      setOutcome(null);
+      controlsRef.current?.replay();
+    }, 1800);
+    return () => clearTimeout(id);
+  }, [phase, outcome, autoRewatch]);
+
   const canFight = players.length > 0 && enemies.length > 0;
 
   return (
@@ -1970,6 +1987,8 @@ export default function MockBattleClient() {
               onMapChange={setMapField}
               topDown={topDown}
               onToggleTopDown={toggleTopDown}
+              autoRewatch={autoRewatch}
+              onAutoRewatchChange={setAutoRewatch}
               onReset={resetDmgCfg}
             />
 
@@ -2215,6 +2234,8 @@ function DisplayConfigPanel({
   onMapChange,
   topDown,
   onToggleTopDown,
+  autoRewatch,
+  onAutoRewatchChange,
   onReset,
 }: {
   open: boolean;
@@ -2225,6 +2246,8 @@ function DisplayConfigPanel({
   onMapChange: (key: keyof MapConfig, value: number) => void;
   topDown: boolean;
   onToggleTopDown: () => void;
+  autoRewatch: boolean;
+  onAutoRewatchChange: (value: boolean) => void;
   onReset: () => void;
 }) {
   return (
@@ -2305,6 +2328,19 @@ function DisplayConfigPanel({
               </div>
             );
           })}
+
+          {/* Playback — boolean view preferences (in-memory, not persisted). */}
+          <div className="mb-ui-section">
+            <div className="mb-ui-section-title">Playback</div>
+            <label className="mb-ui-check">
+              <input
+                type="checkbox"
+                checked={autoRewatch}
+                onChange={(e) => onAutoRewatchChange(e.target.checked)}
+              />
+              <span>Auto-rewatch</span>
+            </label>
+          </div>
         </div>
       </aside>
     </>
@@ -2417,6 +2453,11 @@ const CSS = `
 .mb-skill-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .mb-skill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: rgba(255,255,255,0.6); cursor: pointer; }
 .mb-skill input { accent-color: #38e0c4; }
+.mb-ui-check {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 12px; color: rgba(255,255,255,0.7); cursor: pointer;
+}
+.mb-ui-check input { accent-color: #38e0c4; width: 15px; height: 15px; cursor: pointer; }
 
 /* ---- Center column ---- */
 .mb-center-col { display: flex; flex-direction: column; align-items: center; gap: 14px; position: sticky; top: 8px; }
