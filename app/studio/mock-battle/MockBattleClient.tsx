@@ -506,6 +506,10 @@ function BattleStage({
         resizeTo: wrapper,
         backgroundAlpha: 0,
         antialias: true,
+        // Render at the device pixel ratio (crisp text/vectors on HiDPI); without
+        // this the canvas rasterizes at 1x and is CSS-upscaled -> blurry.
+        resolution: window.devicePixelRatio || 1,
+        autoDensity: true,
       });
       if (destroyed) {
         pixiApp.destroy();
@@ -732,6 +736,12 @@ function BattleStage({
       })();
       const TW0 = fitW; // sprite-build reference (units scaled to live tileW)
       const BODY_H = TW0 * 1.3;
+      // HP-bar height/gap and the damage stroke are authored in px at the default
+      // tile (DEFAULT_MAP.tileWidth). Scale them into the TW0 build-frame so, after
+      // the node's k = tileW/TW0 scale, they track the board zoom uniformly (like
+      // the ×TW0 sizes) instead of riding k — which distorted them once the board
+      // no longer fit ~1:1 (e.g. inside the portrait shell's smaller center band).
+      const pxScale = TW0 / DEFAULT_MAP.tileWidth;
 
       // Live, persisted view config (loaded from GET /api/config -> mapConfig).
       const mc = config.mapConfig ?? DEFAULT_MAP;
@@ -859,8 +869,8 @@ function BattleStage({
       function drawHealthBar(su: SpriteUnit) {
         const cfg = dmgCfgRef.current;
         const barW = TW0 * cfg.barWidth;
-        const barH = cfg.barHeight;
-        const barY = -su.dispH - cfg.barGap;
+        const barH = cfg.barHeight * pxScale;
+        const barY = -su.dispH - cfg.barGap * pxScale;
         su.barBg.clear();
         su.barBg
           .roundRect(-barW / 2 - 1, barY - 1, barW + 2, barH + 2, 3)
@@ -1091,9 +1101,16 @@ function BattleStage({
             fontSize: (kind === "skill" ? cfg.sizeSkill : cfg.sizeNormal) * TW0,
             fontWeight: "400",
             fill: kind === "skill" ? 0xffd36b : 0xffffff,
-            stroke: { color: 0x05070b, width: cfg.stroke },
+            stroke: { color: 0x05070b, width: cfg.stroke * pxScale },
           },
         });
+        // The text is rasterized at its (small) local fontSize, then the unit node
+        // magnifies it by k = tileW/TW0 (+ board zoom). Rasterize fine enough to
+        // stay crisp through that upscale (capped to avoid huge glyph textures).
+        t.resolution = Math.min(
+          4,
+          (window.devicePixelRatio || 1) * Math.max(1, (tileW / TW0) * boardScale),
+        );
         t.anchor.set(0.5);
         // Parent the number to the unit node (like the HP bar) so it tracks the
         // char as it moves/knocks back. node already counter-rotates + unsquashes
