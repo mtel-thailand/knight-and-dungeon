@@ -48,12 +48,14 @@ export default function StudioClient() {
   const toggleCharPanelRef = useRef<(() => void) | null>(null);
   const toggleBattlePanelRef = useRef<(() => boolean) | null>(null);
   const toggleSpellsPanelRef = useRef<(() => boolean) | null>(null);
+  const spellsMenuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const container = containerRef.current!;
     let pixiApp!: PixiApplication;
     let injectedStyle: HTMLStyleElement | null = null;
     let resizeHandler: (() => void) | null = null;
+    let modalKeyHandler: ((e: KeyboardEvent) => void) | null = null;
     let destroyed = false;
 
     async function init() {
@@ -2221,34 +2223,118 @@ export default function StudioClient() {
       }
       toggleBattlePanelRef.current = doToggleBattlePanel;
 
-      // --- Spells manager panel (CMS: global spell defs) ---
-      // Spells are a PARENT-LEVEL entity (same tier as characters), so this panel
-      // mirrors the character-management idiom: a selectable .char-list of spell
-      // rows + a bottom .char-new-form "Add spell", and the selected spell's
-      // config (name, animation, power, cooldown) shows in an editor area below —
-      // master-detail in one side panel. activeSpell mirrors activeCharacter.
-      // Create/edit → POST /api/config/spell; delete → DELETE. Per-character
-      // ownership stays in the Battle panel's Spells section.
-      const spellsPanel = document.createElement("div");
-      spellsPanel.className = "battle-panel";
+      // --- Spells manager (CMS: global spell defs) — two-modal flow ---
+      // Spells are a PARENT-LEVEL entity (same tier as characters). Modal 1 is the
+      // spell LIST (add / delete / select — reuses the character list/row classes);
+      // clicking a row opens Modal 2, the selected spell's DETAIL editor (name,
+      // animation, power, cooldown, Save), stacked above. activeSpell mirrors
+      // activeCharacter. Create/edit → POST /api/config/spell; delete → DELETE.
+      // Per-character ownership stays in the Battle panel's Spells section.
 
-      const spellsTitle = document.createElement("div");
-      spellsTitle.className = "config-panel-title";
-      spellsTitle.textContent = "Spells";
-      spellsPanel.appendChild(spellsTitle);
+      // No modal/overlay idiom existed in the studio, so build a small centered
+      // dialog: backdrop + dialog, with ✕ / backdrop-click / Esc to close. One
+      // document-level Esc handler (registered once, removed in cleanup) closes
+      // the TOPMOST open modal, so a stacked detail closes before its list.
+      const openModals: Array<{ z: number; close: () => void }> = [];
+      modalKeyHandler = (e: KeyboardEvent) => {
+        if (e.key !== "Escape" || openModals.length === 0) return;
+        e.stopPropagation();
+        openModals.reduce((a, b) => (b.z >= a.z ? b : a)).close();
+      };
+      document.addEventListener("keydown", modalKeyHandler);
 
-      // Master list — reuses the character list/row classes for visual parity.
+      function makeModal(opts: {
+        title: string;
+        z: number;
+        onClose?: () => void;
+      }) {
+        const root = document.createElement("div");
+        root.className = "modal-backdrop";
+        root.style.zIndex = String(opts.z);
+
+        const dialog = document.createElement("div");
+        dialog.className = "modal-dialog";
+        dialog.setAttribute("role", "dialog");
+        dialog.setAttribute("aria-modal", "true");
+        dialog.setAttribute("aria-label", opts.title);
+        dialog.tabIndex = -1;
+        root.appendChild(dialog);
+
+        const header = document.createElement("div");
+        header.className = "modal-header";
+        const titleEl = document.createElement("div");
+        titleEl.className = "modal-title";
+        titleEl.textContent = opts.title;
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "modal-close";
+        closeBtn.textContent = "✕";
+        closeBtn.setAttribute("aria-label", "Close");
+        header.appendChild(titleEl);
+        header.appendChild(closeBtn);
+        dialog.appendChild(header);
+
+        const body = document.createElement("div");
+        body.className = "modal-body";
+        dialog.appendChild(body);
+
+        let open = false;
+        let lastFocus: HTMLElement | null = null;
+        const entry = { z: opts.z, close: doClose };
+        function doOpen() {
+          if (open) return;
+          open = true;
+          lastFocus = document.activeElement as HTMLElement | null;
+          openModals.push(entry);
+          root.classList.add("open");
+          dialog.focus();
+        }
+        function doClose() {
+          if (!open) return;
+          open = false;
+          const i = openModals.indexOf(entry);
+          if (i >= 0) openModals.splice(i, 1);
+          root.classList.remove("open");
+          opts.onClose?.();
+          if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+        }
+        closeBtn.addEventListener("click", doClose);
+        root.addEventListener("click", (e) => {
+          if (e.target === root) doClose();
+        });
+        return {
+          root,
+          body,
+          titleEl,
+          open: doOpen,
+          close: doClose,
+          isOpen: () => open,
+        };
+      }
+
+      // Modal 2 (detail) is created first so the list modal's onClose can dismiss
+      // it; z-index (not DOM order) keeps detail above the list.
+      const detailModal = makeModal({ title: "Spell", z: 70 });
+      const listModal = makeModal({
+        title: "Spells",
+        z: 60,
+        onClose: () => {
+          detailModal.close();
+          syncSpellsMenu(false);
+        },
+      });
+      container.appendChild(listModal.root);
+      container.appendChild(detailModal.root);
+
+      function syncSpellsMenu(isOpen: boolean) {
+        spellsMenuBtnRef.current?.classList.toggle("active", isOpen);
+      }
+
+      // Master list (Modal 1 body) — reuses the character list/row classes.
       const spellList = document.createElement("div");
       spellList.className = "char-list spell-list";
-      spellsPanel.appendChild(spellList);
+      listModal.body.appendChild(spellList);
 
-      // Detail editor — reuses the battle-content treatment so makeBattleNumRow /
-      // makeBattleSaveBtn drop straight in.
-      const spellEditor = document.createElement("div");
-      spellEditor.className = "battle-content spell-editor";
-      spellsPanel.appendChild(spellEditor);
-
-      // Add form — pinned at the bottom, identical to the character panel.
+      // Add form (Modal 1 body) — same controls as the character "new" form.
       const spellNewForm = document.createElement("div");
       spellNewForm.className = "char-new-form";
       const spellNewInput = document.createElement("input");
@@ -2260,7 +2346,10 @@ export default function StudioClient() {
       spellAddBtn.textContent = "Add";
       spellNewForm.appendChild(spellNewInput);
       spellNewForm.appendChild(spellAddBtn);
-      spellsPanel.appendChild(spellNewForm);
+      listModal.body.appendChild(spellNewForm);
+
+      // The detail editor (Modal 2) renders straight into the detail dialog body.
+      const spellEditor = detailModal.body;
 
       // Client-only selection state (mirrors activeCharacter; not persisted).
       let activeSpell = spellsState[0]?.id ?? "";
@@ -2332,7 +2421,7 @@ export default function StudioClient() {
           row.addEventListener("click", (e) => {
             if (rowActions.contains(e.target as Node)) return;
             if (row.querySelector(".char-rename-input")) return;
-            if (spell.id !== activeSpell) selectSpell(spell.id);
+            selectSpell(spell.id);
           });
 
           editBtn.addEventListener("click", (e) => {
@@ -2360,6 +2449,7 @@ export default function StudioClient() {
             inp.addEventListener("keydown", (ev) => {
               if (ev.key === "Enter") commit();
               if (ev.key === "Escape") {
+                ev.stopPropagation();
                 committed = true;
                 renderSpellList();
               }
@@ -2389,7 +2479,16 @@ export default function StudioClient() {
       function selectSpell(id: string) {
         activeSpell = id;
         renderSpellList();
+        openSpellDetail();
+      }
+
+      // Opens Modal 2 for the active spell: title it, render the editor, show it
+      // (stacked above the list modal).
+      function openSpellDetail() {
+        const spell = spellsState.find((s) => s.id === activeSpell);
+        detailModal.titleEl.textContent = spell ? spell.name : "Spell";
         renderSpellEditor();
+        detailModal.open();
       }
 
       // Detail view: the selected spell's editable config (mirrors how selecting
@@ -2401,10 +2500,7 @@ export default function StudioClient() {
         if (!spell) {
           const empty = document.createElement("div");
           empty.className = "battle-hint";
-          empty.textContent =
-            spellsState.length === 0
-              ? "No spells yet. Add one below."
-              : "Select a spell to edit.";
+          empty.textContent = "Select a spell from the list to edit.";
           spellEditor.appendChild(empty);
           return;
         }
@@ -2421,6 +2517,7 @@ export default function StudioClient() {
         nameInput.placeholder = "Spell name";
         nameInput.addEventListener("input", () => {
           spell.name = nameInput.value;
+          detailModal.titleEl.textContent = spell.name || "Spell";
           const activeName = spellList.querySelector(
             ".char-row.active .char-row-name",
           );
@@ -2493,24 +2590,28 @@ export default function StudioClient() {
         spellsState.push(spell);
         saveSpell(spell);
         spellNewInput.value = "";
-        selectSpell(id);
+        // Stay in the list (Modal 1); just highlight the new spell. Click its row
+        // to open the detail editor (Modal 2).
+        activeSpell = id;
+        renderSpellList();
       }
       spellAddBtn.addEventListener("click", addSpell);
       spellNewInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") addSpell();
       });
 
-      container.appendChild(spellsPanel);
-
-      let spellsPanelOpen = false;
+      // The menu-bar "Spells" button opens/closes Modal 1; closing it (here or via
+      // ✕ / backdrop / Esc → the list modal's onClose) also dismisses Modal 2 and
+      // clears the menu highlight.
       function doToggleSpellsPanel(): boolean {
-        spellsPanelOpen = !spellsPanelOpen;
-        if (spellsPanelOpen) {
-          renderSpellList();
-          renderSpellEditor();
+        if (listModal.isOpen()) {
+          listModal.close();
+          return false;
         }
-        spellsPanel.classList.toggle("open", spellsPanelOpen);
-        return spellsPanelOpen;
+        renderSpellList();
+        listModal.open();
+        syncSpellsMenu(true);
+        return true;
       }
       toggleSpellsPanelRef.current = doToggleSpellsPanel;
 
@@ -2527,6 +2628,8 @@ export default function StudioClient() {
     return () => {
       destroyed = true;
       if (resizeHandler) window.removeEventListener("resize", resizeHandler);
+      if (modalKeyHandler)
+        document.removeEventListener("keydown", modalKeyHandler);
       if (pixiApp) {
         try {
           pixiApp.destroy();
@@ -2568,13 +2671,9 @@ export default function StudioClient() {
           Battle
         </button>
         <button
+          ref={spellsMenuBtnRef}
           className="menu-bar-item"
-          onClick={(e) =>
-            e.currentTarget.classList.toggle(
-              "active",
-              !!toggleSpellsPanelRef.current?.(),
-            )
-          }
+          onClick={() => toggleSpellsPanelRef.current?.()}
         >
           Spells
         </button>
