@@ -16,6 +16,7 @@ import type {
 } from "@/lib/battle/types";
 import { BATTLE_TICK, BOARD, DEFAULT_DAMAGE_CONFIG, MAX_BATTLE_TIME, STAT_BOUNDS } from "@/lib/battle/types";
 import { isoPos, isoHex, getHexRowsFromCounts } from "../studioHelpers";
+import GameScreenShell from "./GameScreenShell";
 import { Jersey_25 } from "next/font/google";
 
 // Pixel display font for the floating damage numbers (self-hosted via next/font,
@@ -461,6 +462,11 @@ type StageProps = {
   // Repaint hook: the effect points this at its redrawHealthBars() so the panel
   // can re-geometry the HP bars live (same stable-ref pattern as dmgCfgRef).
   redrawHealthBarsRef: React.MutableRefObject<() => void>;
+  // Live board-view config + the effect's apply hook (same bridge pattern): the
+  // panel mutates mapCfgRef and calls applyMapRef() to re-layout the board live,
+  // without tearing down the Pixi app.
+  mapCfgRef: React.MutableRefObject<MapConfig>;
+  applyMapRef: React.MutableRefObject<() => void>;
   onReady: () => void;
   onEnd: (r: "win" | "lose" | "draw") => void;
 };
@@ -471,6 +477,8 @@ function BattleStage({
   controlsRef,
   dmgCfgRef,
   redrawHealthBarsRef,
+  mapCfgRef,
+  applyMapRef,
   onReady,
   onEnd,
 }: StageProps) {
@@ -741,21 +749,6 @@ function BattleStage({
       let rotXRad = (rotXDeg * Math.PI) / 180;
       let rotYRad = (rotYDeg * Math.PI) / 180;
 
-      // Top-down (overhead) view — a TRANSIENT session toggle, never persisted.
-      // MapConfig has no field for a saved iso preset, so turning it ON snapshots
-      // the live iso view, flattens to a clean overhead hex grid, and OFF restores
-      // that snapshot exactly. While it's on we suppress scheduleSave() so the
-      // user's tuned iso config on the server is never clobbered — a page reload
-      // returns to that saved iso config.
-      const TOPDOWN_RATIO = 1; // pointy-top reads as a clean hexagon when height ≈ width (H is capped at 1)
-      let topDown = false;
-      let isoSnapshot: {
-        ratio: number;
-        rotDeg: number;
-        rotXDeg: number;
-        rotYDeg: number;
-      } | null = null;
-
       // Outer viewport applies the pseudo-3D tilt (pitch/yaw foreshorten) + zoom
       // OUTSIDE the in-plane Z-rotation, so units can counter just rotation +
       // foreshorten (no shear) and read as upright billboards.
@@ -988,174 +981,26 @@ function BattleStage({
       // reset to a no-op in cleanup so a stale closure can't paint a dead app.
       redrawHealthBarsRef.current = redrawHealthBars;
 
-      // On-canvas controls (mirror the studio's map-overlay): live tile Width,
-      // Height ratio, Scale and view Rotation — persisted to the DB on change.
-      const mapOverlay = document.createElement("div");
-      mapOverlay.className = "map-overlay";
-      function addMapCtrl(
-        label: string,
-        value: number,
-        min: number,
-        max: number,
-        step: number,
-        onChange: (v: number) => void,
-      ) {
-        const lab = document.createElement("span");
-        lab.className = "map-overlay-label";
-        lab.textContent = label;
-        const inp = document.createElement("input");
-        inp.type = "number";
-        inp.className = "map-overlay-input";
-        inp.min = String(min);
-        inp.max = String(max);
-        inp.step = String(step);
-        inp.value = String(value);
-        inp.addEventListener("input", () => {
-          const v = parseFloat(inp.value);
-          if (!isNaN(v)) onChange(clamp(v, min, max));
-        });
-        mapOverlay.appendChild(lab);
-        mapOverlay.appendChild(inp);
-        return { label: lab, input: inp };
-      }
-      // Debounced persistence: POST the full MapConfig so dragging doesn't spam.
-      let saveTimer: ReturnType<typeof setTimeout> | null = null;
-      function scheduleSave() {
-        // Top-down is a transient view; never persist its preset over the iso config.
-        if (topDown) return;
-        if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
-          const body: MapConfig = {
-            tileWidth: Math.round(tileW),
-            tileHeightRatio: ratio,
-            scale: boardScale,
-            rotation: Math.round(rotDeg),
-            rotationX: Math.round(rotXDeg),
-            rotationY: Math.round(rotYDeg),
-          };
-          fetch("/api/config/map", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }).catch(() => {});
-        }, 350);
-      }
-      cleanups.push(() => {
-        if (saveTimer) clearTimeout(saveTimer);
-      });
-
-      const B = MAP_BOUNDS;
-      addMapCtrl("W", Math.round(tileW), B.tileWidth.min, B.tileWidth.max, 4, (v) => {
-        tileW = v;
+      // Live board-view bridge. The Display panel mutates mapCfgRef and calls
+      // applyMapRef(); applyMap re-derives the effect-local view vars from the
+      // ref (same clamps/derivations as the setup above) and relayouts. There's
+      // no on-canvas overlay anymore — board-view tuning + its debounced
+      // /api/config/map persistence both live in the React Display panel.
+      function applyMap() {
+        const m = mapCfgRef.current;
+        tileW = clamp(m.tileWidth, MAP_BOUNDS.tileWidth.min, MAP_BOUNDS.tileWidth.max);
+        ratio = clamp(
+          m.tileHeightRatio,
+          MAP_BOUNDS.tileHeightRatio.min,
+          MAP_BOUNDS.tileHeightRatio.max,
+        );
+        boardScale = clamp(m.scale, MAP_BOUNDS.scale.min, MAP_BOUNDS.scale.max);
+        rotRad = (m.rotation * Math.PI) / 180;
+        rotXRad = (m.rotationX * Math.PI) / 180;
+        rotYRad = (m.rotationY * Math.PI) / 180;
         relayout();
-        scheduleSave();
-      });
-      const ctrlH = addMapCtrl(
-        "H",
-        ratio,
-        B.tileHeightRatio.min,
-        B.tileHeightRatio.max,
-        0.05,
-        (v) => {
-          ratio = v;
-          relayout();
-          scheduleSave();
-        },
-      );
-      addMapCtrl("Scale", boardScale, B.scale.min, B.scale.max, 0.05, (v) => {
-        boardScale = v;
-        centerBoard();
-        scheduleSave();
-      });
-      const ctrlRot = addMapCtrl("Rotation", rotDeg, B.rotation.min, B.rotation.max, 5, (v) => {
-        rotDeg = v;
-        rotRad = (v * Math.PI) / 180;
-        relayout();
-        scheduleSave();
-      });
-      const ctrlRotX = addMapCtrl("Rot X", rotXDeg, B.rotationX.min, B.rotationX.max, 5, (v) => {
-        rotXDeg = v;
-        rotXRad = (v * Math.PI) / 180;
-        relayout();
-        scheduleSave();
-      });
-      const ctrlRotY = addMapCtrl("Rot Y", rotYDeg, B.rotationY.min, B.rotationY.max, 5, (v) => {
-        rotYDeg = v;
-        rotYRad = (v * Math.PI) / 180;
-        relayout();
-        scheduleSave();
-      });
-      // ---- Top-down toggle: flatten to an overhead hex grid and back ----
-      // The pitch/yaw/rotation/squash sliders are overridden by the preset while
-      // top-down is on, so they're disabled + shown at their preset values; W and
-      // Scale stay live. Snapshot/restore keeps the user's iso tuning intact.
-      const lockedCtrls = [ctrlH, ctrlRot, ctrlRotX, ctrlRotY];
-      const tdBtn = document.createElement("button");
-      tdBtn.type = "button";
-      tdBtn.className = "map-overlay-toggle";
-      tdBtn.textContent = "Top-down";
-      tdBtn.setAttribute("aria-pressed", "false");
-      tdBtn.title =
-        "Flatten to an overhead hex grid (a temporary view — your saved iso config is untouched)";
-
-      function refreshTopDownUI() {
-        tdBtn.classList.toggle("on", topDown);
-        tdBtn.setAttribute("aria-pressed", topDown ? "true" : "false");
-        // Reflect the (overridden) live values, then lock the affected sliders.
-        const round3 = (n: number) => Math.round(n * 1000) / 1000;
-        ctrlH.input.value = String(round3(ratio));
-        ctrlRot.input.value = String(Math.round(rotDeg));
-        ctrlRotX.input.value = String(Math.round(rotXDeg));
-        ctrlRotY.input.value = String(Math.round(rotYDeg));
-        for (const c of lockedCtrls) {
-          c.input.disabled = topDown;
-          c.input.classList.toggle("is-locked", topDown);
-          c.label.classList.toggle("is-locked", topDown);
-        }
       }
-
-      function applyTopDown(on: boolean) {
-        if (on === topDown) return;
-        if (on) {
-          // Snapshot the live iso view so OFF restores it exactly.
-          isoSnapshot = { ratio, rotDeg, rotXDeg, rotYDeg };
-          // Drop any debounced save still holding the pre-toggle iso values.
-          if (saveTimer) {
-            clearTimeout(saveTimer);
-            saveTimer = null;
-          }
-          ratio = TOPDOWN_RATIO;
-          rotDeg = 0;
-          rotRad = 0;
-          rotXDeg = 0;
-          rotXRad = 0;
-          rotYDeg = 0;
-          rotYRad = 0;
-          topDown = true;
-        } else {
-          if (isoSnapshot) {
-            ratio = isoSnapshot.ratio;
-            rotDeg = isoSnapshot.rotDeg;
-            rotRad = (rotDeg * Math.PI) / 180;
-            rotXDeg = isoSnapshot.rotXDeg;
-            rotXRad = (rotXDeg * Math.PI) / 180;
-            rotYDeg = isoSnapshot.rotYDeg;
-            rotYRad = (rotYDeg * Math.PI) / 180;
-          }
-          topDown = false;
-        }
-        refreshTopDownUI();
-        relayout(); // redraw grid + re-place upright units; also re-centers
-      }
-      tdBtn.addEventListener("click", () => applyTopDown(!topDown));
-
-      // Toggle sits at the head of the overlay, ahead of the numeric tweaks.
-      const tdSep = document.createElement("span");
-      tdSep.className = "map-overlay-sep";
-      mapOverlay.insertBefore(tdSep, mapOverlay.firstChild);
-      mapOverlay.insertBefore(tdBtn, mapOverlay.firstChild);
-
-      container.appendChild(mapOverlay);
+      applyMapRef.current = applyMap;
 
       // ---- Playback primitives (all genId/destroyed-aware) ----
       function wait(ms: number): Promise<void> {
@@ -1557,6 +1402,7 @@ function BattleStage({
       }
       controlsRef.current = null;
       redrawHealthBarsRef.current = () => {};
+      applyMapRef.current = () => {};
       if (pixiApp) {
         try {
           pixiApp.destroy();
@@ -1735,6 +1581,77 @@ export default function MockBattleClient() {
     redrawHealthBarsRef.current();
   }, [scheduleDmgSave]);
 
+  // Board-view config — same bridge pattern as dmgCfg. `mapCfg` drives the
+  // panel's Board-view sliders; `mapCfgRef` mirrors it for the effect; the
+  // effect points `applyMapRef` at its live re-layout, so a slider tweak
+  // refreshes the board immediately with no Pixi rebuild. Persisted (debounced)
+  // to /api/config/map and hydrated on load (below), just like dmgCfg.
+  const [mapCfg, setMapCfg] = useState<MapConfig>(() => ({ ...DEFAULT_MAP }));
+  const mapCfgRef = useRef<MapConfig>(mapCfg);
+  mapCfgRef.current = mapCfg;
+  const applyMapRef = useRef<() => void>(() => {});
+  // Top-down is a transient preset: snapshot the iso view, flatten (overhead
+  // ratio, no rotation), restore on toggle off. While it's on, saves are
+  // suppressed so the persisted iso config is never clobbered (reload returns
+  // to it) — mirroring the old overlay's behavior.
+  const [topDown, setTopDown] = useState(false);
+  const topDownRef = useRef(topDown);
+  topDownRef.current = topDown;
+  const isoSnapshotRef = useRef<MapConfig | null>(null);
+  const mapSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleMapSave = useCallback(() => {
+    if (topDownRef.current) return; // transient view — don't persist the preset
+    if (mapSaveTimer.current) clearTimeout(mapSaveTimer.current);
+    mapSaveTimer.current = setTimeout(() => {
+      fetch("/api/config/map", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mapCfgRef.current),
+      }).catch(() => {});
+    }, 400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (mapSaveTimer.current) clearTimeout(mapSaveTimer.current);
+    },
+    [],
+  );
+  const setMapField = useCallback(
+    (key: keyof MapConfig, value: number) => {
+      setMapCfg((prev) => ({ ...prev, [key]: value }));
+      // Sync the ref synchronously so the immediate applyMap reads the new value.
+      mapCfgRef.current = { ...mapCfgRef.current, [key]: value };
+      scheduleMapSave();
+      applyMapRef.current(); // live board re-layout (effect re-derives + relayouts)
+    },
+    [scheduleMapSave],
+  );
+  const toggleTopDown = useCallback(() => {
+    if (!topDownRef.current) {
+      // iso -> top-down: snapshot, then flatten (keep tile width + scale).
+      isoSnapshotRef.current = { ...mapCfgRef.current };
+      const td: MapConfig = {
+        ...mapCfgRef.current,
+        tileHeightRatio: 1,
+        rotation: 0,
+        rotationX: 0,
+        rotationY: 0,
+      };
+      topDownRef.current = true;
+      mapCfgRef.current = td;
+      setTopDown(true);
+      setMapCfg(td);
+    } else {
+      // top-down -> iso: restore the snapshot exactly (already the saved view).
+      const iso = isoSnapshotRef.current ?? { ...DEFAULT_MAP };
+      topDownRef.current = false;
+      mapCfgRef.current = iso;
+      setTopDown(false);
+      setMapCfg(iso);
+    }
+    applyMapRef.current();
+  }, []);
+
   const statsFor = useCallback(
     (cfg: BootstrapConfig, id: string): UnitStats =>
       clampStats(cfg.battleStats?.[id] ?? DEFAULT_STATS),
@@ -1757,6 +1674,9 @@ export default function MockBattleClient() {
       // was created with defaults before this fetch resolved). Uses setDmgCfg
       // directly — NOT setDmgField — so loading never triggers a re-save.
       setDmgCfg({ ...DEFAULT_DAMAGE_CONFIG, ...(cfg.damageConfig ?? {}) });
+      // Same for the board view (drives the panel's Board-view sliders); setMapCfg
+      // directly so loading never triggers a re-save.
+      setMapCfg({ ...DEFAULT_MAP, ...(cfg.mapConfig ?? {}) });
       // Seed a default matchup from the playable roster — first character vs the
       // next distinct one — so "Start battle" works immediately and stays correct
       // for any roster (no hardcoded ids).
@@ -1999,24 +1919,40 @@ export default function MockBattleClient() {
           <div className="mb-center-msg">Resolving battle…</div>
         ) : (
           <div className="mb-arena">
-            {config && result && (
-              <BattleStage
-                key={battleKey}
-                result={result}
-                config={config}
-                controlsRef={controlsRef}
-                dmgCfgRef={dmgCfgRef}
-                redrawHealthBarsRef={redrawHealthBarsRef}
-                onReady={onStageReady}
-                onEnd={onStageEnd}
-              />
-            )}
+            {/* Portrait game frame: BattleStage is the 40% center field; the
+                top/bottom 30% zones stay empty (reserved HUD space). The Pixi
+                canvas host (.mb-stage, absolute inset:0) fills .gss-center-field
+                so resizeTo reads the real band size and the board re-fits. */}
+            <GameScreenShell
+              center={
+                config && result ? (
+                  <BattleStage
+                    key={battleKey}
+                    result={result}
+                    config={config}
+                    controlsRef={controlsRef}
+                    dmgCfgRef={dmgCfgRef}
+                    redrawHealthBarsRef={redrawHealthBarsRef}
+                    mapCfgRef={mapCfgRef}
+                    applyMapRef={applyMapRef}
+                    onReady={onStageReady}
+                    onEnd={onStageEnd}
+                  />
+                ) : null
+              }
+            />
 
+            {/* Dev chrome floats OVER the frame as arena-level siblings (higher
+                z-index) — never inside the reserved zones. */}
             <DisplayConfigPanel
               open={uiPanelOpen}
               onToggle={() => setUiPanelOpen((v) => !v)}
               dmgCfg={dmgCfg}
               onDmgChange={setDmgField}
+              mapCfg={mapCfg}
+              onMapChange={setMapField}
+              topDown={topDown}
+              onToggleTopDown={toggleTopDown}
               onReset={resetDmgCfg}
             />
 
@@ -2195,16 +2131,18 @@ function PartyColumn({
 }
 
 /* ------------------------------------------------------------------ *
- * Display config panel — a right-side slide-in drawer of live "look"
- * knobs (floating damage numbers + health bar). Data-driven: add a
- * group by pushing to UI_SECTIONS; each control targets one DamageCfg
- * field. Edits route through onDmgChange -> state + the spawn-time ref
- * (+ a live HP-bar repaint), so tweaks retune mid-battle with no Pixi
- * rebuild.
+ * Display config panel — a right-side slide-in drawer of all live
+ * display knobs: floating damage numbers, health bar, AND board view.
+ * Data-driven: each section names a config `group` ("damage" -> dmgCfg
+ * via onDmgChange; "board" -> mapCfg via onMapChange). Add a group by
+ * pushing a section to UI_SECTIONS. Board edits relayout the live Pixi
+ * board (applyMapRef) and persist to /api/config/map — no Pixi rebuild.
  * ------------------------------------------------------------------ */
 
-type DmgControl = {
-  key: keyof DamageCfg;
+type PanelGroup = "damage" | "board";
+
+type SliderControl = {
+  key: string; // a key of the section group's config (DamageCfg | MapConfig)
   label: string;
   min: number;
   max: number;
@@ -2213,9 +2151,10 @@ type DmgControl = {
   digits?: number; // fixed decimals in the readout (omit -> show as integer)
 };
 
-const UI_SECTIONS: { title: string; controls: DmgControl[] }[] = [
+const UI_SECTIONS: { title: string; group: PanelGroup; controls: SliderControl[] }[] = [
   {
     title: "Damage numbers",
+    group: "damage",
     controls: [
       { key: "sizeNormal", label: "Damage size", min: 0.1, max: 0.8, step: 0.01, digits: 2 },
       { key: "sizeSkill", label: "Skill size", min: 0.1, max: 0.9, step: 0.01, digits: 2 },
@@ -2229,10 +2168,23 @@ const UI_SECTIONS: { title: string; controls: DmgControl[] }[] = [
   },
   {
     title: "Health bar",
+    group: "damage",
     controls: [
       { key: "barWidth", label: "Bar width", min: 0.2, max: 2, step: 0.05, digits: 2 },
       { key: "barHeight", label: "Bar height", min: 2, max: 20, step: 1, suffix: "px" },
       { key: "barGap", label: "Bar gap", min: -40, max: 60, step: 1, suffix: "px" },
+    ],
+  },
+  {
+    title: "Board view",
+    group: "board",
+    controls: [
+      { key: "tileWidth", label: "Tile width", min: MAP_BOUNDS.tileWidth.min, max: MAP_BOUNDS.tileWidth.max, step: 2, suffix: "px" },
+      { key: "tileHeightRatio", label: "Height ratio", min: MAP_BOUNDS.tileHeightRatio.min, max: MAP_BOUNDS.tileHeightRatio.max, step: 0.02, digits: 2 },
+      { key: "scale", label: "Scale", min: MAP_BOUNDS.scale.min, max: MAP_BOUNDS.scale.max, step: 0.05, digits: 2 },
+      { key: "rotation", label: "Rotation", min: MAP_BOUNDS.rotation.min, max: MAP_BOUNDS.rotation.max, step: 5, suffix: "°" },
+      { key: "rotationX", label: "Tilt X", min: MAP_BOUNDS.rotationX.min, max: MAP_BOUNDS.rotationX.max, step: 5, suffix: "°" },
+      { key: "rotationY", label: "Tilt Y", min: MAP_BOUNDS.rotationY.min, max: MAP_BOUNDS.rotationY.max, step: 5, suffix: "°" },
     ],
   },
 ];
@@ -2242,12 +2194,20 @@ function DisplayConfigPanel({
   onToggle,
   dmgCfg,
   onDmgChange,
+  mapCfg,
+  onMapChange,
+  topDown,
+  onToggleTopDown,
   onReset,
 }: {
   open: boolean;
   onToggle: () => void;
   dmgCfg: DamageCfg;
   onDmgChange: (key: keyof DamageCfg, value: number) => void;
+  mapCfg: MapConfig;
+  onMapChange: (key: keyof MapConfig, value: number) => void;
+  topDown: boolean;
+  onToggleTopDown: () => void;
   onReset: () => void;
 }) {
   return (
@@ -2272,34 +2232,62 @@ function DisplayConfigPanel({
         </div>
 
         <div className="mb-ui-scroll">
-          {UI_SECTIONS.map((section) => (
-            <div key={section.title} className="mb-ui-section">
-              <div className="mb-ui-section-title">{section.title}</div>
-              {section.controls.map((c) => {
-                const value = dmgCfg[c.key];
-                return (
-                  <div key={c.key} className="mb-ui-row">
-                    <div className="mb-ui-row-head">
-                      <span className="mb-ui-label">{c.label}</span>
-                      <span className="mb-ui-value">
-                        {c.digits != null ? value.toFixed(c.digits) : value}
-                        {c.suffix ?? ""}
-                      </span>
+          {UI_SECTIONS.map((section) => {
+            const isBoard = section.group === "board";
+            return (
+              <div key={section.title} className="mb-ui-section">
+                <div className="mb-ui-section-title">{section.title}</div>
+                {isBoard && (
+                  <button
+                    type="button"
+                    className={`mb-ui-pill ${topDown ? "on" : ""}`}
+                    onClick={onToggleTopDown}
+                    aria-pressed={topDown}
+                    title="Flatten to an overhead hex grid (a temporary view — your saved iso config is untouched)"
+                  >
+                    Top-down
+                  </button>
+                )}
+                {section.controls.map((c) => {
+                  const value = isBoard
+                    ? mapCfg[c.key as keyof MapConfig]
+                    : dmgCfg[c.key as keyof DamageCfg];
+                  // Top-down overrides tilt/rotation/ratio — lock those while it's
+                  // on (tile width + scale stay live), mirroring the old overlay.
+                  const locked =
+                    isBoard && topDown && c.key !== "tileWidth" && c.key !== "scale";
+                  return (
+                    <div
+                      key={c.key}
+                      className={`mb-ui-row ${locked ? "is-locked" : ""}`}
+                    >
+                      <div className="mb-ui-row-head">
+                        <span className="mb-ui-label">{c.label}</span>
+                        <span className="mb-ui-value">
+                          {c.digits != null ? value.toFixed(c.digits) : value}
+                          {c.suffix ?? ""}
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        className="mb-ui-slider"
+                        min={c.min}
+                        max={c.max}
+                        step={c.step}
+                        value={value}
+                        disabled={locked}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (isBoard) onMapChange(c.key as keyof MapConfig, v);
+                          else onDmgChange(c.key as keyof DamageCfg, v);
+                        }}
+                      />
                     </div>
-                    <input
-                      type="range"
-                      className="mb-ui-slider"
-                      min={c.min}
-                      max={c.max}
-                      step={c.step}
-                      value={value}
-                      onChange={(e) => onDmgChange(c.key, Number(e.target.value))}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+                  );
+                })}
+              </div>
+            );
+          })}
         </div>
       </aside>
     </>
@@ -2437,37 +2425,6 @@ const CSS = `
 /* ---- Arena ---- */
 .mb-arena { position: absolute; inset: 0; }
 .mb-stage { position: absolute; inset: 0; }
-.map-overlay {
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-  z-index: 8; display: flex; align-items: center; gap: 8px;
-  background: rgba(15,20,30,0.85); border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 8px; padding: 5px 12px;
-}
-.map-overlay-label { font-size: 10px; color: rgba(255,255,255,0.4); font-weight: 600; letter-spacing: 0.05em; }
-.map-overlay-input {
-  width: 52px; background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.12); border-radius: 4px;
-  color: #e8e8f0; font-size: 11px; font-family: 'SF Mono','Fira Code',monospace;
-  padding: 3px 5px; outline: none; text-align: right; -moz-appearance: textfield;
-}
-.map-overlay-input::-webkit-inner-spin-button,
-.map-overlay-input::-webkit-outer-spin-button { -webkit-appearance: none; }
-.map-overlay-input:focus { border-color: rgba(255,255,255,0.3); }
-.map-overlay-input.is-locked { opacity: 0.32; cursor: not-allowed; border-style: dashed; }
-.map-overlay-label.is-locked { opacity: 0.32; }
-.map-overlay-sep { width: 1px; height: 18px; background: rgba(255,255,255,0.14); flex-shrink: 0; }
-.map-overlay-toggle {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.02em; line-height: 1;
-  color: rgba(255,255,255,0.7); cursor: pointer; white-space: nowrap;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.14);
-  border-radius: 5px; padding: 4px 10px;
-  transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.14s;
-}
-.map-overlay-toggle:hover { color: #fff; background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.32); }
-.map-overlay-toggle.on {
-  color: #04140f; background: linear-gradient(180deg, #46eccf, #2bbfa6);
-  border-color: rgba(56,224,196,0.6); box-shadow: 0 2px 10px rgba(43,191,166,0.35);
-}
 .mb-back-btn {
   position: absolute; top: 14px; left: 14px; z-index: 5;
   background: rgba(15,15,20,0.82); border: 1px solid rgba(255,255,255,0.1);
@@ -2533,7 +2490,22 @@ const CSS = `
   font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
   color: rgba(255,255,255,0.4); margin-bottom: 14px;
 }
+.mb-ui-pill {
+  display: inline-flex; align-items: center; margin: -2px 0 16px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.02em; line-height: 1;
+  color: rgba(255,255,255,0.7); cursor: pointer; white-space: nowrap;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 6px; padding: 6px 12px; outline: none;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.14s;
+}
+.mb-ui-pill:hover { color: #fff; background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.32); }
+.mb-ui-pill.on {
+  color: #04140f; background: linear-gradient(180deg, #46eccf, #2bbfa6);
+  border-color: rgba(56,224,196,0.6); box-shadow: 0 2px 10px rgba(43,191,166,0.35);
+}
 .mb-ui-row { margin-bottom: 15px; }
+.mb-ui-row.is-locked { opacity: 0.4; }
+.mb-ui-row.is-locked .mb-ui-slider { cursor: not-allowed; }
 .mb-ui-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
 .mb-ui-label { font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: 0.02em; }
 .mb-ui-value {
