@@ -37,6 +37,15 @@ export type SpellDef = {
   type: SpellType;
   power: number; // damage multiplier on caster.attack
   cooldown: number; // seconds
+  // Visual-only playback config — used by the replay projectile + the editor
+  // preview, NOT by the engine (so it never reaches SpellInput / the resolve payload).
+  fps?: number; // projectile animation frames/sec (default DEFAULT_SPELL_FPS)
+  scale?: number; // projectile size multiplier (default 1)
+  loop?: boolean; // loop the animation during flight (default true)
+  duration?: number; // projectile FLIGHT time, seconds (default DEFAULT_SPELL_DURATION)
+  offsetX?: number; // projectile render X offset, px (-200..200)
+  offsetY?: number; // projectile render Y offset, px (-200..200)
+  rotation?: number; // orientation offset added to the aim, degrees
 };
 
 // What travels to the PURE engine per member (the engine can't read the DB).
@@ -51,8 +60,16 @@ export type SpellInput = {
 export const SPELL_BOUNDS = {
   power: { min: 0, max: 100 },
   cooldown: { min: 0, max: 600 },
+  fps: { min: 1, max: 60 },
+  scale: { min: 0.1, max: 4 },
+  duration: { min: 0.05, max: 5 },
+  offsetX: { min: -200, max: 200 },
+  offsetY: { min: -200, max: 200 },
+  rotation: { min: -360, max: 360 },
 } as const;
 export const MAX_SPELLS_PER_UNIT = 8;
+export const DEFAULT_SPELL_FPS = 12; // projectile playback fps when a spell has no `fps`
+export const DEFAULT_SPELL_DURATION = 0.36; // projectile flight seconds (matches SPELL_FLIGHT_MS)
 
 export type UnitStats = {
   hp: number;

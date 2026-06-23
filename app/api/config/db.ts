@@ -98,6 +98,13 @@ function createDb(): Database.Database {
       type          TEXT NOT NULL DEFAULT 'attack',
       power         REAL NOT NULL DEFAULT 1,
       cooldown      REAL NOT NULL DEFAULT 0,
+      fps           REAL,
+      scale         REAL,
+      loop          INTEGER,
+      duration      REAL,
+      offset_x      REAL,
+      offset_y      REAL,
+      rotation      REAL,
       sort_order    INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS character_spells (
@@ -105,6 +112,10 @@ function createDb(): Database.Database {
       spell_id     TEXT NOT NULL,
       sort_order   INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (character_id, spell_id)
+    );
+    CREATE TABLE IF NOT EXISTS mock_battle_roster (
+      id   INTEGER PRIMARY KEY CHECK (id = 1),
+      data TEXT NOT NULL
     );
   `);
   // Migration: battle_map_config predates rotation_x / rotation_y. CREATE TABLE
@@ -142,6 +153,38 @@ function createDb(): Database.Database {
     db.exec(
       "ALTER TABLE character_battle_stats ADD COLUMN attack_type TEXT NOT NULL DEFAULT 'melee'",
     );
+  }
+  // Migration: spells predates the visual playback columns (fps / scale / loop /
+  // duration / offset_x / offset_y / rotation). They're nullable (optional in
+  // SpellDef), so existing data/app.db and the bundled data/seed/app.db gain them
+  // here, each ALTER guarded by a column check.
+  const spellCols = new Set(
+    (
+      db
+        .prepare("SELECT name FROM pragma_table_info('spells')")
+        .all() as Array<{ name: string }>
+    ).map((c) => c.name),
+  );
+  if (!spellCols.has("fps")) {
+    db.exec("ALTER TABLE spells ADD COLUMN fps REAL");
+  }
+  if (!spellCols.has("scale")) {
+    db.exec("ALTER TABLE spells ADD COLUMN scale REAL");
+  }
+  if (!spellCols.has("loop")) {
+    db.exec("ALTER TABLE spells ADD COLUMN loop INTEGER");
+  }
+  if (!spellCols.has("duration")) {
+    db.exec("ALTER TABLE spells ADD COLUMN duration REAL");
+  }
+  if (!spellCols.has("offset_x")) {
+    db.exec("ALTER TABLE spells ADD COLUMN offset_x REAL");
+  }
+  if (!spellCols.has("offset_y")) {
+    db.exec("ALTER TABLE spells ADD COLUMN offset_y REAL");
+  }
+  if (!spellCols.has("rotation")) {
+    db.exec("ALTER TABLE spells ADD COLUMN rotation REAL");
   }
   return db;
 }
@@ -606,7 +649,7 @@ export function saveDamageConfig(cfg: DamageConfig): void {
 export function listSpells(): SpellDef[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, name, animation_key, type, power, cooldown
+      `SELECT id, name, animation_key, type, power, cooldown, fps, scale, loop, duration, offset_x, offset_y, rotation
          FROM spells ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -616,6 +659,13 @@ export function listSpells(): SpellDef[] {
     type: string;
     power: number;
     cooldown: number;
+    fps: number | null;
+    scale: number | null;
+    loop: number | null;
+    duration: number | null;
+    offset_x: number | null;
+    offset_y: number | null;
+    rotation: number | null;
   }>;
   return rows.map((r) => ({
     id: r.id,
@@ -624,6 +674,13 @@ export function listSpells(): SpellDef[] {
     type: r.type as SpellType,
     power: r.power,
     cooldown: r.cooldown,
+    fps: r.fps ?? undefined,
+    scale: r.scale ?? undefined,
+    loop: r.loop == null ? undefined : !!r.loop,
+    duration: r.duration ?? undefined,
+    offsetX: r.offset_x ?? undefined,
+    offsetY: r.offset_y ?? undefined,
+    rotation: r.rotation ?? undefined,
   }));
 }
 
@@ -648,6 +705,13 @@ export function upsertSpell(s: {
   type?: SpellType;
   power?: number;
   cooldown?: number;
+  fps?: number;
+  scale?: number;
+  loop?: boolean;
+  duration?: number;
+  offsetX?: number;
+  offsetY?: number;
+  rotation?: number;
   sortOrder?: number;
 }): void {
   const db = getDb();
@@ -659,14 +723,21 @@ export function upsertSpell(s: {
         .get() as { n: number }
     ).n;
   db.prepare(
-    `INSERT INTO spells (id, name, animation_key, type, power, cooldown, sort_order)
-       VALUES (@id, @name, @animation_key, @type, @power, @cooldown, @sort_order)
+    `INSERT INTO spells (id, name, animation_key, type, power, cooldown, fps, scale, loop, duration, offset_x, offset_y, rotation, sort_order)
+       VALUES (@id, @name, @animation_key, @type, @power, @cooldown, @fps, @scale, @loop, @duration, @offset_x, @offset_y, @rotation, @sort_order)
      ON CONFLICT(id) DO UPDATE SET
        name          = excluded.name,
        animation_key = excluded.animation_key,
        type          = excluded.type,
        power         = excluded.power,
-       cooldown      = excluded.cooldown`,
+       cooldown      = excluded.cooldown,
+       fps           = excluded.fps,
+       scale         = excluded.scale,
+       loop          = excluded.loop,
+       duration      = excluded.duration,
+       offset_x      = excluded.offset_x,
+       offset_y      = excluded.offset_y,
+       rotation      = excluded.rotation`,
   ).run({
     id: s.id,
     name: s.name,
@@ -674,6 +745,13 @@ export function upsertSpell(s: {
     type: s.type ?? "attack",
     power: s.power ?? 1,
     cooldown: s.cooldown ?? 0,
+    fps: s.fps ?? null,
+    scale: s.scale ?? null,
+    loop: s.loop == null ? null : s.loop ? 1 : 0,
+    duration: s.duration ?? null,
+    offset_x: s.offsetX ?? null,
+    offset_y: s.offsetY ?? null,
+    rotation: s.rotation ?? null,
     sort_order: sortOrder,
   });
 }
@@ -706,4 +784,30 @@ export function setCharacterSpells(
       insert.run({ character_id: characterId, spell_id: spellId, sort_order: i });
     });
   })();
+}
+
+// ---------------------------------------------------------------------------
+// Mock-battle party roster (/studio/mock-battle) — a single-row (id=1) table
+// holding the party-builder state as an OPAQUE JSON blob (no typed schema), so
+// the client-owned shape can evolve without a migration. Read via GET
+// /api/config (roster) and written through POST /api/config/roster. Mirrors the
+// readUserState / writeUserState blob style; the server never inspects the shape.
+// ---------------------------------------------------------------------------
+
+/** The persisted party-roster blob, or null when nothing has been saved yet. */
+export function getRoster(): unknown | null {
+  const row = getDb()
+    .prepare("SELECT data FROM mock_battle_roster WHERE id = 1")
+    .get() as { data: string } | undefined;
+  return row ? JSON.parse(row.data) : null;
+}
+
+/** Idempotent upsert of the single party-roster row (id=1). */
+export function setRoster(data: unknown): void {
+  getDb()
+    .prepare(
+      `INSERT INTO mock_battle_roster (id, data) VALUES (1, @data)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+    )
+    .run({ data: JSON.stringify(data) });
 }

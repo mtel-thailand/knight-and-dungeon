@@ -16,7 +16,7 @@ import type {
   Team,
   UnitStats,
 } from "@/lib/battle/types";
-import { BATTLE_TICK, BOARD, DEFAULT_DAMAGE_CONFIG, MAX_BATTLE_TIME, STAT_BOUNDS } from "@/lib/battle/types";
+import { BATTLE_TICK, BOARD, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_DURATION, DEFAULT_SPELL_FPS, MAX_BATTLE_TIME, STAT_BOUNDS } from "@/lib/battle/types";
 import { isoPos, isoHex, getHexRowsFromCounts } from "../studioHelpers";
 import GameScreenShell from "./GameScreenShell";
 import { Jersey_25 } from "next/font/google";
@@ -174,6 +174,9 @@ type BootstrapConfig = {
   damageConfig?: DamageCfg;
   spells?: SpellDef[];
   characterSpells?: Record<string, string[]>;
+  // Last-saved mock-battle builder parties (opaque to the server). null/absent
+  // until the user edits a party; restored on load, persisted (debounced) on edit.
+  roster?: { players: BuildUnit[]; enemies: BuildUnit[] } | null;
 };
 
 function normalizeConfig(data: any): BootstrapConfig {
@@ -190,6 +193,7 @@ function normalizeConfig(data: any): BootstrapConfig {
     damageConfig: data?.damageConfig ?? { ...DEFAULT_DAMAGE_CONFIG },
     spells: Array.isArray(data?.spells) ? data.spells : [],
     characterSpells: data?.characterSpells ?? {},
+    roster: data?.roster ?? null,
   };
 }
 
@@ -458,9 +462,11 @@ type SpriteUnit = {
   r: number;
   dead: boolean;
   // Body horizontal facing as a scale-X SIGN: 1 = right (the art's authored
-  // direction), -1 = left. Set from the current target's board row and applied
-  // at the node; it survives relayout because relayout multiplies node.scale.x
-  // by it (so board-config changes never lose the facing).
+  // direction), -1 = left. At rest it defaults by team (enemy = -1/left,
+  // player = 1/right); engage re-points it at the current target's board row.
+  // Applied to the BODY sprite (body.scale.x = absScale * facing) — never the
+  // node, which also holds the HP bar + damage numbers, so flipping never
+  // mirrors the UI. Zoom-independent, so it survives relayout (node-only rescale).
   facing: 1 | -1;
 };
 
@@ -984,9 +990,10 @@ function BattleStage({
           const p = pixelOf(su.q, su.r);
           su.node.position.set(p.x, p.y);
           su.node.rotation = -rotRad;
-          // Upright, unsquashed billboard; the X scale also carries su.facing's
-          // sign so the body faces its target — and that survives every relayout.
-          su.node.scale.set(k * isx * su.facing, k * isy);
+          // Upright, unsquashed billboard — board zoom + counter-rotation only.
+          // Facing lives on the BODY's scale-X (set at build/engage/reset) and is
+          // zoom-independent, so it survives relayout without mirroring the UI.
+          su.node.scale.set(k * isx, k * isy);
         }
         centerBoard();
       }
@@ -1075,10 +1082,12 @@ function BattleStage({
         }
 
         const absScale = Math.abs(body.scale.x) || 1;
-        // Art is authored facing RIGHT; horizontal facing is now driven by the
-        // unit's current target row and applied at the node (su.facing), so the
-        // body keeps its natural (positive) X scale — no team-based flip here.
-        body.scale.x = absScale;
+        // Horizontal facing is a scale-X SIGN carried by the BODY sprite (never
+        // the node — flipping that would mirror the HP bar + damage numbers). The
+        // art is authored facing RIGHT; at rest enemies face LEFT, players RIGHT,
+        // and doAttack re-points it at the current target on engage.
+        const facing: 1 | -1 = u.team === "enemy" ? -1 : 1;
+        body.scale.x = absScale * facing;
 
         const barBg = new Graphics();
         const accent = new Graphics();
@@ -1109,7 +1118,7 @@ function BattleStage({
           q: u.position.q,
           r: u.position.r,
           dead: false,
-          facing: 1, // default right (art's authored direction); set on engage
+          facing, // team default at rest (enemy=left, player=right); set on engage
         };
         // Paint the bar from the live config now that the SpriteUnit exists
         // (defaults reproduce the original geometry exactly).
@@ -1345,21 +1354,30 @@ function BattleStage({
       ): Promise<void> {
         const sp = (config.spells ?? []).find((s) => s.id === spellId);
         const frames = sp ? framesForKey(sp.animationKey) : [];
-        const a = pixelOf(from.q, from.r);
-        const b = pixelOf(to.q, to.r);
-        if (!frames.length) return wait(SPELL_FLIGHT_MS); // no art -> preserve timing
+        // SpellDef visual config: flight time, render offset, orientation.
+        const flightMs = (sp?.duration ?? DEFAULT_SPELL_DURATION) * 1000;
+        const offX = sp?.offsetX ?? 0;
+        const offY = sp?.offsetY ?? 0;
+        const pa = pixelOf(from.q, from.r);
+        const pb = pixelOf(to.q, to.r);
+        // Shift both endpoints by the offset so the whole straight line translates.
+        const a = { x: pa.x + offX, y: pa.y + offY };
+        const b = { x: pb.x + offX, y: pb.y + offY };
+        if (!frames.length) return wait(flightMs); // no art -> preserve timing
         const proj = new AnimatedSprite(frames);
         proj.anchor.set(0.5);
-        proj.loop = true;
-        proj.scale.set(tileW / TW0, tileW / TW0);
-        proj.animationSpeed = frames.length / (0.4 * TICKER_FPS);
-        proj.rotation = Math.atan2(b.y - a.y, b.x - a.x);
+        proj.loop = sp?.loop ?? true; // false -> frames play once (flight unchanged)
+        const k = (tileW / TW0) * (sp?.scale ?? 1);
+        proj.scale.set(k, k);
+        proj.animationSpeed = (sp?.fps ?? DEFAULT_SPELL_FPS) / TICKER_FPS;
+        proj.rotation =
+          Math.atan2(b.y - a.y, b.x - a.x) + ((sp?.rotation ?? 0) * Math.PI) / 180;
         proj.position.set(a.x, a.y);
         proj.zIndex = 9999;
         unitsLayer.addChild(proj);
         proj.play();
         return tween(
-          SPELL_FLIGHT_MS,
+          flightMs,
           (p) => {
             const e = easeInOutQuad(p);
             proj.position.set(lerp(a.x, b.x, e), lerp(a.y, b.y, e));
@@ -1412,11 +1430,12 @@ function BattleStage({
       ) {
         // Face the target by board row: LEFT if the target sits in a lower row,
         // RIGHT if higher; unchanged (default right) for same-row / no-target.
-        // Apply to the live node now (mirrors relayout's k*isx) so the flip shows
-        // during the swing; relayout re-derives it from su.facing on later edits.
+        // Flip the BODY sprite only — never the node, which also carries the HP
+        // bar + damage numbers (flipping it would mirror them). absScale keeps the
+        // body's natural size; su.facing is the only sign that changes.
         if (target) {
-          su.facing = target.r < su.r ? -1 : 1;
-          su.node.scale.x = (tileW / TW0) * (1 / Math.cos(rotYRad)) * su.facing;
+          su.facing = target.r < su.r ? 1 : -1;
+          su.body.scale.x = su.absScale * su.facing;
         }
         const dir = target
           ? Math.sign(target.node.x - su.node.x) || (su.team === "player" ? 1 : -1)
@@ -1562,9 +1581,8 @@ function BattleStage({
           su.body.alpha = 1;
           su.body.rotation = 0;
           su.body.tint = su.baseTint;
-          su.body.scale.x = su.absScale; // natural right-facing body scale
-          su.facing = 1; // default right for a clean re-watch
-          su.node.scale.x = (tileW / TW0) * (1 / Math.cos(rotYRad)) * su.facing;
+          su.facing = su.team === "enemy" ? -1 : 1; // team default: enemy left, player right
+          su.body.scale.x = su.absScale * su.facing; // facing on the BODY, not the node
           su.hpFill.visible = true;
           su.hpFill.scale.x = 1;
           su.hpFill.tint = hpColor(1);
@@ -1667,6 +1685,53 @@ const genUid = () => Math.random().toString(36).slice(2, 9);
 /** A possibly-absent attackType -> a definite 2-state value (default melee). */
 const attackTypeOf = (t: unknown): "melee" | "ranged" =>
   t === "ranged" ? "ranged" : "melee";
+
+/**
+ * Sanitize one persisted roster entry into a live BuildUnit, or null to drop it.
+ * Defensive against schema drift / hand-edited data: drops units whose
+ * characterId is no longer in the live roster, clamps the slot to range, defaults
+ * a missing/odd attackType to melee, and re-clamps stats over sensible defaults.
+ */
+function sanitizeBuildUnit(raw: any, validIds: Set<string>): BuildUnit | null {
+  if (!raw || typeof raw !== "object") return null;
+  const characterId = typeof raw.characterId === "string" ? raw.characterId : "";
+  if (!validIds.has(characterId)) return null; // not in the live roster -> drop
+  const base = raw.stats && typeof raw.stats === "object" ? raw.stats : {};
+  const stats = clampStats({
+    ...DEFAULT_STATS,
+    ...base,
+    skills: Array.isArray(base.skills) ? base.skills : [],
+  });
+  return {
+    uid: typeof raw.uid === "string" ? raw.uid : genUid(),
+    characterId,
+    slot: clamp(Math.round(Number(raw.slot)) || 0, 0, BOARD.maxPerSide - 1),
+    stats,
+    attackType: attackTypeOf(raw.attackType),
+  };
+}
+
+/**
+ * Rebuild the saved builder parties from `cfg.roster`, validated against the live
+ * roster. Returns null when the roster is absent / not an object / yields no
+ * usable units on either side, so the caller falls back to the default matchup.
+ */
+function restoreParties(
+  cfg: BootstrapConfig,
+): { players: BuildUnit[]; enemies: BuildUnit[] } | null {
+  const r = cfg.roster;
+  if (!r || typeof r !== "object") return null;
+  const validIds = new Set(buildRoster(cfg).map((c) => c.id));
+  const conv = (arr: unknown): BuildUnit[] =>
+    (Array.isArray(arr) ? arr : [])
+      .map((u) => sanitizeBuildUnit(u, validIds))
+      .filter((u): u is BuildUnit => u !== null)
+      .slice(0, BOARD.maxPerSide);
+  const players = conv(r.players);
+  const enemies = conv(r.enemies);
+  if (players.length === 0 && enemies.length === 0) return null;
+  return { players, enemies };
+}
 
 function BoardPreview({
   players,
@@ -1904,6 +1969,35 @@ export default function MockBattleClient() {
     applyMapRef.current();
   }, []);
 
+  // Persist the BUILDER party selection (both parties) server-side, debounced
+  // (~400ms trailing) like the dmgCfg/mapCfg saves: a ref-held timeout + refs
+  // holding the live parties (read at fire time), cleared on unmount. ONLY the
+  // mutators call schedulePartySave — never the load/seed path — so hydration
+  // never re-saves, and transient replay state is excluded by construction.
+  const playersRef = useRef(players);
+  playersRef.current = players;
+  const enemiesRef = useRef(enemies);
+  enemiesRef.current = enemies;
+  const rosterSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const schedulePartySave = useCallback(() => {
+    if (rosterSaveTimer.current) clearTimeout(rosterSaveTimer.current);
+    rosterSaveTimer.current = setTimeout(() => {
+      fetch("/api/config/roster", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roster: { players: playersRef.current, enemies: enemiesRef.current },
+        }),
+      }).catch(() => {});
+    }, 400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (rosterSaveTimer.current) clearTimeout(rosterSaveTimer.current);
+    },
+    [],
+  );
+
   const statsFor = useCallback(
     (cfg: BootstrapConfig, id: string): UnitStats =>
       clampStats(cfg.battleStats?.[id] ?? DEFAULT_STATS),
@@ -1929,33 +2023,41 @@ export default function MockBattleClient() {
       // Same for the board view (drives the panel's Board-view sliders); setMapCfg
       // directly so loading never triggers a re-save.
       setMapCfg({ ...DEFAULT_MAP, ...(cfg.mapConfig ?? {}) });
-      // Seed a default matchup from the playable roster — first character vs the
-      // next distinct one — so "Start battle" works immediately and stays correct
-      // for any roster (no hardcoded ids).
-      const seedRoster = buildRoster(cfg);
-      if (seedRoster.length > 0) {
-        const mid = Math.floor(BOARD.maxPerSide / 2);
-        const playerChar = seedRoster[0];
-        const enemyChar =
-          seedRoster.find((c) => c.id !== playerChar.id) ?? seedRoster[0];
-        setPlayers([
-          {
-            uid: genUid(),
-            characterId: playerChar.id,
-            slot: mid,
-            stats: statsFor(cfg, playerChar.id),
-            attackType: attackTypeOf(cfg.battleStats?.[playerChar.id]?.attackType),
-          },
-        ]);
-        setEnemies([
-          {
-            uid: genUid(),
-            characterId: enemyChar.id,
-            slot: mid,
-            stats: statsFor(cfg, enemyChar.id),
-            attackType: attackTypeOf(cfg.battleStats?.[enemyChar.id]?.attackType),
-          },
-        ]);
+      // Restore the saved builder parties when present + valid (validated against
+      // the live roster); otherwise seed a default matchup from the playable
+      // roster — first character vs the next distinct one — so "Start battle"
+      // works immediately and stays correct for any roster (no hardcoded ids).
+      // setPlayers/setEnemies directly (not the mutators) so hydration never saves.
+      const restored = restoreParties(cfg);
+      if (restored) {
+        setPlayers(restored.players);
+        setEnemies(restored.enemies);
+      } else {
+        const seedRoster = buildRoster(cfg);
+        if (seedRoster.length > 0) {
+          const mid = Math.floor(BOARD.maxPerSide / 2);
+          const playerChar = seedRoster[0];
+          const enemyChar =
+            seedRoster.find((c) => c.id !== playerChar.id) ?? seedRoster[0];
+          setPlayers([
+            {
+              uid: genUid(),
+              characterId: playerChar.id,
+              slot: mid,
+              stats: statsFor(cfg, playerChar.id),
+              attackType: attackTypeOf(cfg.battleStats?.[playerChar.id]?.attackType),
+            },
+          ]);
+          setEnemies([
+            {
+              uid: genUid(),
+              characterId: enemyChar.id,
+              slot: mid,
+              stats: statsFor(cfg, enemyChar.id),
+              attackType: attackTypeOf(cfg.battleStats?.[enemyChar.id]?.attackType),
+            },
+          ]);
+        }
       }
       setLoadingConfig(false);
     })();
@@ -1997,10 +2099,12 @@ export default function MockBattleClient() {
         attackType: attackTypeOf(config.battleStats?.[charId]?.attackType),
       },
     ]);
+    schedulePartySave();
   }
   function removeUnit(team: Team, uid: string) {
     const { list, setList } = partyOps(team);
     setList(list.filter((u) => u.uid !== uid));
+    schedulePartySave();
   }
   function setSlot(team: Team, uid: string, slot: number) {
     const { list, setList } = partyOps(team);
@@ -2013,6 +2117,7 @@ export default function MockBattleClient() {
         return u;
       }),
     );
+    schedulePartySave();
   }
   function setStat(team: Team, uid: string, key: keyof UnitStats, value: number) {
     const { list, setList } = partyOps(team);
@@ -2021,10 +2126,12 @@ export default function MockBattleClient() {
         u.uid === uid ? { ...u, stats: { ...u.stats, [key]: value } } : u,
       ),
     );
+    schedulePartySave();
   }
   function setAttackType(team: Team, uid: string, attackType: "melee" | "ranged") {
     const { list, setList } = partyOps(team);
     setList(list.map((u) => (u.uid === uid ? { ...u, attackType } : u)));
+    schedulePartySave();
   }
   function toggleSkill(team: Team, uid: string, skillId: string) {
     const { list, setList } = partyOps(team);
@@ -2043,6 +2150,7 @@ export default function MockBattleClient() {
         };
       }),
     );
+    schedulePartySave();
   }
 
   async function startFight() {

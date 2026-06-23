@@ -11,7 +11,7 @@ import type {
   BattleEventRole,
   SpellDef,
 } from "@/lib/battle/types";
-import { STAT_BOUNDS, SPELL_BOUNDS, DEFAULT_SPELL_TYPE } from "@/lib/battle/types";
+import { STAT_BOUNDS } from "@/lib/battle/types";
 import {
   SOURCE_FPS,
   TICKER_FPS,
@@ -47,15 +47,12 @@ export default function StudioClient() {
   const containerRef = useRef<HTMLDivElement>(null);
   const toggleCharPanelRef = useRef<(() => void) | null>(null);
   const toggleBattlePanelRef = useRef<(() => boolean) | null>(null);
-  const toggleSpellsPanelRef = useRef<(() => boolean) | null>(null);
-  const spellsMenuBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const container = containerRef.current!;
     let pixiApp!: PixiApplication;
     let injectedStyle: HTMLStyleElement | null = null;
     let resizeHandler: (() => void) | null = null;
-    let modalKeyHandler: ((e: KeyboardEvent) => void) | null = null;
     let destroyed = false;
 
     async function init() {
@@ -121,22 +118,32 @@ export default function StudioClient() {
       // SQLite) via Pixi's Spritesheet. A single bad/missing/oversized sheet
       // must not abort the whole studio, so failures are isolated per row.
       const framesByKey: Record<string, PixiTexture[]> = {};
-      for (const c of catalog) {
-        if (!c.image || !c.frameData) continue;
-        try {
-          const texture = (await Assets.load(`/assets/${c.image}`)) as PixiTexture;
-          if (destroyed) {
-            pixiApp.destroy();
-            return;
+      // Load every sheet's PNG + parse CONCURRENTLY — Pixi's Assets queue
+      // de-dupes/parallelizes the network + decode, so first paint no longer
+      // scales with catalog size (was a strictly serial await-per-row, the slow
+      // part of studio startup). Failures stay isolated per row so one
+      // bad/missing/oversized sheet can't abort the whole studio.
+      await Promise.all(
+        catalog.map(async (c) => {
+          if (!c.image || !c.frameData) return;
+          try {
+            const texture = (await Assets.load(
+              `/assets/${c.image}`,
+            )) as PixiTexture;
+            if (destroyed) return;
+            const sheet = new Spritesheet(texture, c.frameData);
+            await sheet.parse();
+            framesByKey[c.key] = Object.keys(sheet.data.frames).map(
+              (n: string) => sheet.textures[n],
+            );
+          } catch (err) {
+            console.error(`Failed to load spritesheet "${c.key}":`, err);
           }
-          const sheet = new Spritesheet(texture, c.frameData);
-          await sheet.parse();
-          framesByKey[c.key] = Object.keys(sheet.data.frames).map(
-            (n: string) => sheet.textures[n],
-          );
-        } catch (err) {
-          console.error(`Failed to load spritesheet "${c.key}":`, err);
-        }
+        }),
+      );
+      if (destroyed) {
+        pixiApp.destroy();
+        return;
       }
 
       // Derived entries reuse another row's frames (optionally reversed). Rows
@@ -1161,8 +1168,12 @@ export default function StudioClient() {
       const actionsTabBtn = document.createElement("button");
       actionsTabBtn.className = "sub-tab";
       actionsTabBtn.textContent = "Actions";
+      const spellsTabBtn = document.createElement("button");
+      spellsTabBtn.className = "sub-tab";
+      spellsTabBtn.textContent = "Spells";
       subTabBar.appendChild(animTabBtn);
       subTabBar.appendChild(actionsTabBtn);
+      subTabBar.appendChild(spellsTabBtn);
       animPanel.appendChild(subTabBar);
 
       const animList = document.createElement("div");
@@ -1355,7 +1366,95 @@ export default function StudioClient() {
       actionNewForm.appendChild(actionAddBtn);
       actionListContainer.appendChild(actionNewForm);
       animPanel.appendChild(actionListContainer);
+
+      // --- Spells sub-tab: attach GLOBAL spells (the /studio/spells library) to
+      // the active character. Shares characterSpellsState + the /api/config/battle
+      // save path with the Battle Data panel — single source of truth, so toggles
+      // here and there stay consistent in-session. Spells themselves are authored
+      // on /studio/spells; this tab only owns the per-character attachment.
+      const spellsListContainer = document.createElement("div");
+      spellsListContainer.className = "action-list-container";
+      spellsListContainer.style.display = "none";
+      const spellsAttachList = document.createElement("div");
+      spellsAttachList.className = "actions-list";
+      spellsListContainer.appendChild(spellsAttachList);
+      const spellsTabHint = document.createElement("div");
+      spellsTabHint.className = "spell-tab-hint";
+      spellsTabHint.append("Create and edit spells on the ");
+      const spellsTabLink = document.createElement("a");
+      spellsTabLink.className = "spell-tab-link";
+      spellsTabLink.href = "/studio/spells";
+      spellsTabLink.textContent = "Spells page";
+      spellsTabHint.appendChild(spellsTabLink);
+      spellsTabHint.append(".");
+      spellsListContainer.appendChild(spellsTabHint);
+      animPanel.appendChild(spellsListContainer);
       container.appendChild(animPanel);
+
+      // Paints the per-character spell-attachment list. Re-run on tab open and on
+      // character switch. Reads/writes the shared characterSpellsState; each toggle
+      // persists immediately via saveBattle (same payload as the Battle panel's
+      // "Save Spells" button), so the two stay in lockstep within the session.
+      function renderSpellsTab() {
+        spellsAttachList.innerHTML = "";
+        if (!CHARACTER) {
+          spellsTabHint.style.display = "none";
+          return;
+        }
+        spellsTabHint.style.display = "";
+        if (!characterSpellsState[CHARACTER])
+          characterSpellsState[CHARACTER] = [];
+        if (spellsState.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "ae-empty";
+          empty.textContent =
+            "No spells yet — create them in the Spells page.";
+          spellsAttachList.appendChild(empty);
+          return;
+        }
+        spellsState.forEach((spell) => {
+          const owned = (characterSpellsState[CHARACTER] ?? []).includes(
+            spell.id,
+          );
+          const row = document.createElement("div");
+          row.className = "action-row" + (owned ? " active" : "");
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "action-row-name";
+          nameSpan.textContent = spell.name;
+          const meta = document.createElement("span");
+          meta.className = "action-row-count";
+          meta.textContent = `pow ${spell.power} · ${spell.cooldown}s cd`;
+          // Visual-only toggle; the row owns the click (pointer-events off on the
+          // switch avoids a double-fire) so the whole row is the hit target.
+          const toggleLabel = document.createElement("label");
+          toggleLabel.className = "toggle-switch";
+          toggleLabel.style.pointerEvents = "none";
+          const inp = document.createElement("input");
+          inp.type = "checkbox";
+          inp.checked = owned;
+          const track = document.createElement("span");
+          track.className = "toggle-track";
+          toggleLabel.appendChild(inp);
+          toggleLabel.appendChild(track);
+          row.appendChild(nameSpan);
+          row.appendChild(meta);
+          row.appendChild(toggleLabel);
+          row.addEventListener("click", () => {
+            const cur = characterSpellsState[CHARACTER] ?? [];
+            const has = cur.includes(spell.id);
+            characterSpellsState[CHARACTER] = has
+              ? cur.filter((s) => s !== spell.id)
+              : [...cur, spell.id];
+            inp.checked = !has;
+            row.classList.toggle("active", !has);
+            saveBattle({
+              characterId: CHARACTER,
+              spells: characterSpellsState[CHARACTER] ?? [],
+            });
+          });
+          spellsAttachList.appendChild(row);
+        });
+      }
 
       function renderAnimList() {
         updateAnimAddVisibility();
@@ -1528,8 +1627,10 @@ export default function StudioClient() {
       animTabBtn.addEventListener("click", () => {
         animTabBtn.classList.add("active");
         actionsTabBtn.classList.remove("active");
+        spellsTabBtn.classList.remove("active");
         animList.style.display = "";
         actionListContainer.style.display = "none";
+        spellsListContainer.style.display = "none";
         animTabActive = true;
         updateAnimAddVisibility();
         previewCancelled = true;
@@ -1540,11 +1641,28 @@ export default function StudioClient() {
       actionsTabBtn.addEventListener("click", () => {
         actionsTabBtn.classList.add("active");
         animTabBtn.classList.remove("active");
+        spellsTabBtn.classList.remove("active");
         animList.style.display = "none";
         actionListContainer.style.display = "";
+        spellsListContainer.style.display = "none";
         animTabActive = false;
         updateAnimAddVisibility();
         renderActionList();
+      });
+
+      spellsTabBtn.addEventListener("click", () => {
+        spellsTabBtn.classList.add("active");
+        animTabBtn.classList.remove("active");
+        actionsTabBtn.classList.remove("active");
+        animList.style.display = "none";
+        actionListContainer.style.display = "none";
+        spellsListContainer.style.display = "";
+        animTabActive = false;
+        updateAnimAddVisibility();
+        previewCancelled = true;
+        selectedActionId = null;
+        showPlaybackPanel();
+        renderSpellsTab();
       });
 
       function renderCharacterList() {
@@ -1701,6 +1819,7 @@ export default function StudioClient() {
         charBtn.classList.add("anim-open");
         renderCharConfig();
         renderAnimList();
+        renderSpellsTab();
         updateEmptyHint();
       }
 
@@ -1718,6 +1837,7 @@ export default function StudioClient() {
         renderCharacterList();
         renderCharConfig();
         renderAnimList();
+        renderSpellsTab();
         updateEmptyHint();
       }
 
@@ -1827,10 +1947,12 @@ export default function StudioClient() {
       const roleMapsState: Record<string, CharacterRoleMap> = {
         ...(bootstrap.roleMaps ?? {}),
       };
-      // Global spell catalog (top-level entities, like characters) + per-character
-      // ownership. Working copies seeded from the bootstrap: the Spells panel
-      // mutates spellsState; the Battle panel's Spells section mutates
-      // characterSpellsState. Cloned so edits don't touch the bootstrap payload.
+      // Global spell catalog + per-character ownership, seeded from the bootstrap.
+      // Spell DEFINITIONS are managed on the dedicated /studio/spells pages, so
+      // spellsState here is read-only — it backs the Battle panel's per-character
+      // Spells assignment toggles. characterSpellsState is the editable ownership
+      // (mutated there, saved via POST /api/config/battle). Cloned to avoid
+      // touching the bootstrap payload.
       const spellsState: SpellDef[] = Array.isArray(bootstrap.spells)
         ? bootstrap.spells.map((s) => ({ ...s }))
         : [];
@@ -1905,22 +2027,6 @@ export default function StudioClient() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
-        }).catch(() => {});
-      }
-
-      // Global spell defs persist on their own endpoint (separate from the
-      // per-character battle write). Fire-and-forget + caught so the CMS still
-      // works locally if the server lane isn't live yet.
-      function saveSpell(spell: SpellDef) {
-        fetch("/api/config/spell", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ spell }),
-        }).catch(() => {});
-      }
-      function deleteSpell(id: string) {
-        fetch(`/api/config/spell?id=${encodeURIComponent(id)}`, {
-          method: "DELETE",
         }).catch(() => {});
       }
 
@@ -2223,398 +2329,6 @@ export default function StudioClient() {
       }
       toggleBattlePanelRef.current = doToggleBattlePanel;
 
-      // --- Spells manager (CMS: global spell defs) — two-modal flow ---
-      // Spells are a PARENT-LEVEL entity (same tier as characters). Modal 1 is the
-      // spell LIST (add / delete / select — reuses the character list/row classes);
-      // clicking a row opens Modal 2, the selected spell's DETAIL editor (name,
-      // animation, power, cooldown, Save), stacked above. activeSpell mirrors
-      // activeCharacter. Create/edit → POST /api/config/spell; delete → DELETE.
-      // Per-character ownership stays in the Battle panel's Spells section.
-
-      // No modal/overlay idiom existed in the studio, so build a small centered
-      // dialog: backdrop + dialog, with ✕ / backdrop-click / Esc to close. One
-      // document-level Esc handler (registered once, removed in cleanup) closes
-      // the TOPMOST open modal, so a stacked detail closes before its list.
-      const openModals: Array<{ z: number; close: () => void }> = [];
-      modalKeyHandler = (e: KeyboardEvent) => {
-        if (e.key !== "Escape" || openModals.length === 0) return;
-        e.stopPropagation();
-        openModals.reduce((a, b) => (b.z >= a.z ? b : a)).close();
-      };
-      document.addEventListener("keydown", modalKeyHandler);
-
-      function makeModal(opts: {
-        title: string;
-        z: number;
-        onClose?: () => void;
-      }) {
-        const root = document.createElement("div");
-        root.className = "modal-backdrop";
-        root.style.zIndex = String(opts.z);
-
-        const dialog = document.createElement("div");
-        dialog.className = "modal-dialog";
-        dialog.setAttribute("role", "dialog");
-        dialog.setAttribute("aria-modal", "true");
-        dialog.setAttribute("aria-label", opts.title);
-        dialog.tabIndex = -1;
-        root.appendChild(dialog);
-
-        const header = document.createElement("div");
-        header.className = "modal-header";
-        const titleEl = document.createElement("div");
-        titleEl.className = "modal-title";
-        titleEl.textContent = opts.title;
-        const closeBtn = document.createElement("button");
-        closeBtn.className = "modal-close";
-        closeBtn.textContent = "✕";
-        closeBtn.setAttribute("aria-label", "Close");
-        header.appendChild(titleEl);
-        header.appendChild(closeBtn);
-        dialog.appendChild(header);
-
-        const body = document.createElement("div");
-        body.className = "modal-body";
-        dialog.appendChild(body);
-
-        let open = false;
-        let lastFocus: HTMLElement | null = null;
-        const entry = { z: opts.z, close: doClose };
-        function doOpen() {
-          if (open) return;
-          open = true;
-          lastFocus = document.activeElement as HTMLElement | null;
-          openModals.push(entry);
-          root.classList.add("open");
-          dialog.focus();
-        }
-        function doClose() {
-          if (!open) return;
-          open = false;
-          const i = openModals.indexOf(entry);
-          if (i >= 0) openModals.splice(i, 1);
-          root.classList.remove("open");
-          opts.onClose?.();
-          if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
-        }
-        closeBtn.addEventListener("click", doClose);
-        root.addEventListener("click", (e) => {
-          if (e.target === root) doClose();
-        });
-        return {
-          root,
-          body,
-          titleEl,
-          open: doOpen,
-          close: doClose,
-          isOpen: () => open,
-        };
-      }
-
-      // Modal 2 (detail) is created first so the list modal's onClose can dismiss
-      // it; z-index (not DOM order) keeps detail above the list.
-      const detailModal = makeModal({ title: "Spell", z: 70 });
-      const listModal = makeModal({
-        title: "Spells",
-        z: 60,
-        onClose: () => {
-          detailModal.close();
-          syncSpellsMenu(false);
-        },
-      });
-      container.appendChild(listModal.root);
-      container.appendChild(detailModal.root);
-
-      function syncSpellsMenu(isOpen: boolean) {
-        spellsMenuBtnRef.current?.classList.toggle("active", isOpen);
-      }
-
-      // Master list (Modal 1 body) — reuses the character list/row classes.
-      const spellList = document.createElement("div");
-      spellList.className = "char-list spell-list";
-      listModal.body.appendChild(spellList);
-
-      // Add form (Modal 1 body) — same controls as the character "new" form.
-      const spellNewForm = document.createElement("div");
-      spellNewForm.className = "char-new-form";
-      const spellNewInput = document.createElement("input");
-      spellNewInput.type = "text";
-      spellNewInput.className = "char-new-input";
-      spellNewInput.placeholder = "Spell name";
-      const spellAddBtn = document.createElement("button");
-      spellAddBtn.className = "char-add-btn";
-      spellAddBtn.textContent = "Add";
-      spellNewForm.appendChild(spellNewInput);
-      spellNewForm.appendChild(spellAddBtn);
-      listModal.body.appendChild(spellNewForm);
-
-      // The detail editor (Modal 2) renders straight into the detail dialog body.
-      const spellEditor = detailModal.body;
-
-      // Client-only selection state (mirrors activeCharacter; not persisted).
-      let activeSpell = spellsState[0]?.id ?? "";
-
-      function uniqueSpellId(base: string): string {
-        if (!spellsState.some((s) => s.id === base)) return base;
-        let n = 2;
-        while (spellsState.some((s) => s.id === `${base}-${n}`)) n++;
-        return `${base}-${n}`;
-      }
-
-      // Animation <select> options = the full loaded catalog (spells are global,
-      // so they are NOT scoped to a character's kit). A stored key that's no
-      // longer in the catalog is kept as a "(missing)" option so saving doesn't
-      // silently drop it.
-      function fillSpellAnimSelect(sel: HTMLSelectElement, current: string) {
-        sel.innerHTML = "";
-        if (animations.length === 0) {
-          const opt = document.createElement("option");
-          opt.value = "";
-          opt.textContent = "(no animations)";
-          sel.appendChild(opt);
-        }
-        animations.forEach((a) => {
-          const opt = document.createElement("option");
-          opt.value = a.configKey;
-          opt.textContent = a.label;
-          sel.appendChild(opt);
-        });
-        if (current && !animations.some((a) => a.configKey === current)) {
-          const opt = document.createElement("option");
-          opt.value = current;
-          opt.textContent = `${current} (missing)`;
-          sel.appendChild(opt);
-        }
-        sel.value = current;
-      }
-
-      function renderSpellList() {
-        spellList.innerHTML = "";
-        spellsState.forEach((spell) => {
-          const row = document.createElement("div");
-          row.className =
-            "char-row" + (spell.id === activeSpell ? " active" : "");
-
-          const nameSpan = document.createElement("span");
-          nameSpan.className = "char-row-name";
-          nameSpan.textContent = spell.name;
-
-          const rowActions = document.createElement("div");
-          rowActions.className = "char-row-actions";
-
-          const editBtn = document.createElement("button");
-          editBtn.className = "char-action-btn";
-          editBtn.textContent = "✎";
-          editBtn.title = "Rename";
-
-          const deleteBtn = document.createElement("button");
-          deleteBtn.className = "char-action-btn";
-          deleteBtn.textContent = "×";
-          deleteBtn.title = "Delete";
-
-          rowActions.appendChild(editBtn);
-          rowActions.appendChild(deleteBtn);
-          row.appendChild(nameSpan);
-          row.appendChild(rowActions);
-          spellList.appendChild(row);
-
-          row.addEventListener("click", (e) => {
-            if (rowActions.contains(e.target as Node)) return;
-            if (row.querySelector(".char-rename-input")) return;
-            selectSpell(spell.id);
-          });
-
-          editBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const inp = document.createElement("input");
-            inp.type = "text";
-            inp.className = "char-rename-input";
-            inp.value = spell.name;
-            row.replaceChild(inp, nameSpan);
-            inp.focus();
-            inp.select();
-            let committed = false;
-            function commit() {
-              if (committed) return;
-              committed = true;
-              const newName = inp.value.trim();
-              if (newName && newName !== spell.name) {
-                spell.name = newName;
-                saveSpell(spell);
-              }
-              renderSpellList();
-              if (spell.id === activeSpell) renderSpellEditor();
-            }
-            inp.addEventListener("blur", commit);
-            inp.addEventListener("keydown", (ev) => {
-              if (ev.key === "Enter") commit();
-              if (ev.key === "Escape") {
-                ev.stopPropagation();
-                committed = true;
-                renderSpellList();
-              }
-            });
-          });
-
-          deleteBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            const idx = spellsState.findIndex((s) => s.id === spell.id);
-            if (idx === -1) return;
-            spellsState.splice(idx, 1);
-            deleteSpell(spell.id);
-            // Drop the deleted id from every character's ownership working copy.
-            Object.keys(characterSpellsState).forEach((cid) => {
-              characterSpellsState[cid] = (
-                characterSpellsState[cid] ?? []
-              ).filter((sid) => sid !== spell.id);
-            });
-            if (activeSpell === spell.id)
-              activeSpell = spellsState[Math.max(0, idx - 1)]?.id ?? "";
-            renderSpellList();
-            renderSpellEditor();
-          });
-        });
-      }
-
-      function selectSpell(id: string) {
-        activeSpell = id;
-        renderSpellList();
-        openSpellDetail();
-      }
-
-      // Opens Modal 2 for the active spell: title it, render the editor, show it
-      // (stacked above the list modal).
-      function openSpellDetail() {
-        const spell = spellsState.find((s) => s.id === activeSpell);
-        detailModal.titleEl.textContent = spell ? spell.name : "Spell";
-        renderSpellEditor();
-        detailModal.open();
-      }
-
-      // Detail view: the selected spell's editable config (mirrors how selecting
-      // a character surfaces its config). Name is also editable inline via the
-      // row's ✎. Save → POST the whole spell; the list re-renders to sync names.
-      function renderSpellEditor() {
-        spellEditor.innerHTML = "";
-        const spell = spellsState.find((s) => s.id === activeSpell);
-        if (!spell) {
-          const empty = document.createElement("div");
-          empty.className = "battle-hint";
-          empty.textContent = "Select a spell from the list to edit.";
-          spellEditor.appendChild(empty);
-          return;
-        }
-
-        const nameRow = document.createElement("div");
-        nameRow.className = "battle-row";
-        const nameLbl = document.createElement("span");
-        nameLbl.className = "battle-row-label";
-        nameLbl.textContent = "Name";
-        const nameInput = document.createElement("input");
-        nameInput.type = "text";
-        nameInput.className = "spell-name-input";
-        nameInput.value = spell.name;
-        nameInput.placeholder = "Spell name";
-        nameInput.addEventListener("input", () => {
-          spell.name = nameInput.value;
-          detailModal.titleEl.textContent = spell.name || "Spell";
-          const activeName = spellList.querySelector(
-            ".char-row.active .char-row-name",
-          );
-          if (activeName) activeName.textContent = spell.name;
-        });
-        nameRow.appendChild(nameLbl);
-        nameRow.appendChild(nameInput);
-        spellEditor.appendChild(nameRow);
-
-        const animRow = document.createElement("div");
-        animRow.className = "battle-row";
-        const animLbl = document.createElement("span");
-        animLbl.className = "battle-row-label";
-        animLbl.textContent = "Animation";
-        const animSel = document.createElement("select");
-        animSel.className = "battle-select";
-        fillSpellAnimSelect(animSel, spell.animationKey);
-        animSel.addEventListener("change", () => {
-          spell.animationKey = animSel.value;
-        });
-        animRow.appendChild(animLbl);
-        animRow.appendChild(animSel);
-        spellEditor.appendChild(animRow);
-
-        makeBattleNumRow(
-          "Power",
-          spell.power,
-          SPELL_BOUNDS.power.min,
-          SPELL_BOUNDS.power.max,
-          0.1,
-          (v) => {
-            spell.power = v;
-          },
-          spellEditor,
-        );
-        makeBattleNumRow(
-          "Cooldown",
-          spell.cooldown,
-          SPELL_BOUNDS.cooldown.min,
-          SPELL_BOUNDS.cooldown.max,
-          0.5,
-          (v) => {
-            spell.cooldown = v;
-          },
-          spellEditor,
-        );
-
-        makeBattleSaveBtn(
-          "Save Spell",
-          () => {
-            saveSpell(spell);
-            renderSpellList();
-          },
-          spellEditor,
-        );
-      }
-
-      function addSpell() {
-        const name = spellNewInput.value.trim();
-        if (!name) return;
-        const id = uniqueSpellId(slugify(name, "spell"));
-        const spell: SpellDef = {
-          id,
-          name,
-          animationKey: animations[0]?.configKey ?? "",
-          type: DEFAULT_SPELL_TYPE,
-          power: 1,
-          cooldown: 0,
-        };
-        spellsState.push(spell);
-        saveSpell(spell);
-        spellNewInput.value = "";
-        // Stay in the list (Modal 1); just highlight the new spell. Click its row
-        // to open the detail editor (Modal 2).
-        activeSpell = id;
-        renderSpellList();
-      }
-      spellAddBtn.addEventListener("click", addSpell);
-      spellNewInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") addSpell();
-      });
-
-      // The menu-bar "Spells" button opens/closes Modal 1; closing it (here or via
-      // ✕ / backdrop / Esc → the list modal's onClose) also dismisses Modal 2 and
-      // clears the menu highlight.
-      function doToggleSpellsPanel(): boolean {
-        if (listModal.isOpen()) {
-          listModal.close();
-          return false;
-        }
-        renderSpellList();
-        listModal.open();
-        syncSpellsMenu(true);
-        return true;
-      }
-      toggleSpellsPanelRef.current = doToggleSpellsPanel;
-
       // First paint: currentIndex was resolved from the active character's kit
       // before the sprite was created (applyAnimation already painted it), and
       // renderAnimList already ran — just populate the playback panel to match.
@@ -2628,8 +2342,6 @@ export default function StudioClient() {
     return () => {
       destroyed = true;
       if (resizeHandler) window.removeEventListener("resize", resizeHandler);
-      if (modalKeyHandler)
-        document.removeEventListener("keydown", modalKeyHandler);
       if (pixiApp) {
         try {
           pixiApp.destroy();
@@ -2670,13 +2382,9 @@ export default function StudioClient() {
         >
           Battle
         </button>
-        <button
-          ref={spellsMenuBtnRef}
-          className="menu-bar-item"
-          onClick={() => toggleSpellsPanelRef.current?.()}
-        >
+        <a className="menu-bar-item" href="/studio/spells">
           Spells
-        </button>
+        </a>
         <a className="menu-bar-item" href="/studio/mock-battle">
           Mock Battle
         </a>

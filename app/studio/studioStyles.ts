@@ -273,6 +273,17 @@ export const STUDIO_CSS = `
         .sub-tab:hover { color: rgba(255,255,255,0.65); }
         .sub-tab.active { color: rgba(255,255,255,0.9); border-bottom-color: rgba(255,255,255,0.35); }
         .action-list-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .spell-tab-hint {
+          margin-top: 16px; padding-top: 16px; flex-shrink: 0;
+          border-top: 1px solid rgba(255,255,255,0.06);
+          font-size: 11px; color: rgba(255,255,255,0.32); line-height: 1.55;
+        }
+        .spell-tab-link {
+          color: rgba(140,180,250,0.9); text-decoration: none;
+          border-bottom: 1px solid rgba(140,180,250,0.35);
+          transition: color 0.12s, border-color 0.12s;
+        }
+        .spell-tab-link:hover { color: #b3cdff; border-bottom-color: rgba(179,205,255,0.6); }
         .actions-list { flex: 1; overflow-y: auto; overflow-x: hidden; margin: 0 -22px; }
         .actions-list::-webkit-scrollbar { width: 4px; }
         .actions-list::-webkit-scrollbar-track { background: transparent; }
@@ -449,58 +460,4 @@ export const STUDIO_CSS = `
         .battle-save-btn.battle-saved {
           background: rgba(100,210,120,0.28); border-color: rgba(100,210,120,0.4); color: #c0ffc8;
         }
-        /* Spells — two-modal flow (list + detail). A small centered-dialog idiom
-           reused for both; the list reuses the character list/row classes. */
-        .modal-backdrop {
-          position: fixed; inset: 0; display: flex;
-          align-items: center; justify-content: center;
-          padding: 24px; box-sizing: border-box;
-          background: rgba(8,8,12,0.62);
-          backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-          opacity: 0; pointer-events: none; transition: opacity 0.18s ease;
-        }
-        .modal-backdrop.open { opacity: 1; pointer-events: auto; }
-        .modal-dialog {
-          width: 100%; max-width: 440px; max-height: 86vh;
-          display: flex; flex-direction: column; overflow: hidden;
-          background: rgba(20,20,26,0.98); color: #e8e8f0;
-          border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
-          box-shadow: 0 24px 70px rgba(0,0,0,0.55);
-          font-family: system-ui, sans-serif; outline: none;
-          transform: translateY(8px) scale(0.985); transition: transform 0.18s ease;
-        }
-        .modal-backdrop.open .modal-dialog { transform: none; }
-        .modal-header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 16px 20px; flex-shrink: 0;
-          border-bottom: 1px solid rgba(255,255,255,0.07);
-        }
-        .modal-title {
-          font-size: 11px; font-weight: 700; letter-spacing: 0.14em;
-          text-transform: uppercase; color: rgba(255,255,255,0.6);
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        }
-        .modal-close {
-          background: none; border: none; color: rgba(255,255,255,0.4);
-          font-size: 16px; line-height: 1; cursor: pointer; padding: 4px 8px;
-          border-radius: 6px; outline: none; flex-shrink: 0;
-          transition: color 0.12s, background 0.12s;
-        }
-        .modal-close:hover { color: #fff; background: rgba(255,255,255,0.08); }
-        .modal-body {
-          flex: 1; overflow-y: auto; overflow-x: hidden;
-          padding: 16px 20px; box-sizing: border-box;
-        }
-        .modal-body::-webkit-scrollbar { width: 4px; }
-        .modal-body::-webkit-scrollbar-track { background: transparent; }
-        .modal-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-        /* List modal: bleed the reused .char-list rows out to the dialog edges. */
-        .spell-list { margin: 0 -20px; }
-        .spell-name-input {
-          flex: 1; min-width: 0; background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
-          color: #e8e8f0; font-size: 13px; font-family: system-ui, sans-serif;
-          padding: 6px 10px; outline: none; transition: border-color 0.15s, background 0.15s;
-        }
-        .spell-name-input:focus { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.08); }
       `;
