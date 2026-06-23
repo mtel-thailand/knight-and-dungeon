@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveBattle } from "@/lib/battle/engine";
 import { isValidHex } from "@/lib/battle/hex";
-import { STAT_BOUNDS, BOARD } from "@/lib/battle/types";
+import {
+  STAT_BOUNDS,
+  BOARD,
+  DEFAULT_ATTACK_TYPE,
+  SPELL_BOUNDS,
+  MAX_SPELLS_PER_UNIT,
+} from "@/lib/battle/types";
 import type {
+  AttackType,
   HexPosition,
   PartyMemberInput,
   ResolveRequest,
+  SpellInput,
   UnitStats,
 } from "@/lib/battle/types";
 
@@ -37,6 +45,33 @@ function sanitizePosition(pos: unknown): HexPosition | null {
   if (typeof r !== "number" || !Number.isInteger(r)) return null;
   const hex = { q, r };
   return isValidHex(hex) ? hex : null;
+}
+
+// Validate a member's spell list: drop invalid entries, dedupe by id, clamp
+// power/cooldown, cap at MAX_SPELLS_PER_UNIT. Never throws / never fails the
+// request — bad spells are simply omitted (mirrors the skills handling).
+function sanitizeSpells(raw: unknown): SpellInput[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SpellInput[] = [];
+  const seen = new Set<string>();
+  for (const x of raw) {
+    if (out.length >= MAX_SPELLS_PER_UNIT) break;
+    if (typeof x !== "object" || x === null) continue;
+    const o = x as Record<string, unknown>;
+    if (typeof o.id !== "string" || !o.id || seen.has(o.id)) continue;
+    if (o.type !== "attack") continue;
+    if (typeof o.power !== "number" || !Number.isFinite(o.power)) continue;
+    if (typeof o.cooldown !== "number" || !Number.isFinite(o.cooldown)) continue;
+    seen.add(o.id);
+    out.push({
+      id: o.id,
+      type: "attack",
+      power: clamp(o.power, SPELL_BOUNDS.power.min, SPELL_BOUNDS.power.max),
+      cooldown: clamp(o.cooldown, SPELL_BOUNDS.cooldown.min, SPELL_BOUNDS.cooldown.max),
+      animationKey: typeof o.animationKey === "string" ? o.animationKey : "",
+    });
+  }
+  return out;
 }
 
 // Returns a sanitized member, or an error string describing the rejection.
@@ -75,8 +110,20 @@ function sanitizeMember(raw: unknown): PartyMemberInput | string {
     ? s.skills.filter((x): x is string => typeof x === "string")
     : [];
 
-  const stats: UnitStats = { hp, attack, defense, actionSpeed, range, skills };
-  return { characterId: m.characterId, stats, position };
+  // attackType is the only non-numeric stat: accept the two valid literals;
+  // anything missing/invalid defaults to melee (matches the engine's buildUnit).
+  const attackType: AttackType =
+    s.attackType === "melee" || s.attackType === "ranged"
+      ? s.attackType
+      : DEFAULT_ATTACK_TYPE;
+
+  const stats: UnitStats = { hp, attack, defense, actionSpeed, range, skills, attackType };
+  return {
+    characterId: m.characterId,
+    stats,
+    position,
+    spells: sanitizeSpells(m.spells),
+  };
 }
 
 function sanitizeParty(

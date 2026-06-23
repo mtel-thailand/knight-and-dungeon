@@ -449,4 +449,28 @@ export const STUDIO_CSS = `
         .battle-save-btn.battle-saved {
           background: rgba(100,210,120,0.28); border-color: rgba(100,210,120,0.4); color: #c0ffc8;
         }
+        /* Spells manager — global spell defs (mirrors the Battle Data panel) */
+        .spell-card {
+          border: 1px solid rgba(255,255,255,0.08); border-radius: 9px;
+          padding: 10px 12px 4px; margin-bottom: 14px;
+          background: rgba(255,255,255,0.02);
+        }
+        .spell-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .spell-name-input {
+          flex: 1; min-width: 0; background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+          color: #e8e8f0; font-size: 13px; font-family: system-ui, sans-serif;
+          padding: 7px 10px; outline: none; transition: border-color 0.15s, background 0.15s;
+        }
+        .spell-name-input:focus { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.08); }
+        .spell-del-btn {
+          background: none; border: none; color: rgba(255,255,255,0.25); font-size: 15px;
+          cursor: pointer; padding: 4px 7px; line-height: 1; outline: none;
+          border-radius: 4px; flex-shrink: 0; transition: color 0.12s, background 0.12s;
+        }
+        .spell-del-btn:hover { color: rgba(230,120,120,0.9); background: rgba(220,80,80,0.1); }
+        .spell-add-form {
+          display: flex; gap: 8px; margin-top: 8px; padding-top: 16px;
+          border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0;
+        }
       `;

@@ -9,6 +9,8 @@ import {
   getCharacterRoleMaps,
   getMapConfig,
   getDamageConfig,
+  listSpells,
+  getCharacterSpells,
 } from "./db";
 
 export const runtime = "nodejs";
@@ -31,6 +33,8 @@ export async function GET() {
     roleMaps: getCharacterRoleMaps(),
     mapConfig: getMapConfig(),
     damageConfig: getDamageConfig(),
+    spells: listSpells(),
+    characterSpells: getCharacterSpells(),
   });
 }
 
@@ -43,11 +47,12 @@ export async function POST(req: NextRequest) {
     );
   }
   // Persist only mutable user state; the catalog (animations + characterSeed),
-  // battle data (battleStats + roleMaps), board layout (mapConfig), and the
-  // damage-number config (damageConfig) are server-managed and must never be
-  // written back from the client. battleStats/roleMaps are edited via POST
-  // /api/config/battle; mapConfig via POST /api/config/map; damageConfig via
-  // POST /api/config/damage.
+  // battle data (battleStats + roleMaps + spells + characterSpells), board
+  // layout (mapConfig), and the damage-number config (damageConfig) are
+  // server-managed and must never be written back from the client.
+  // battleStats/roleMaps/characterSpells are edited via POST /api/config/battle;
+  // the spell catalog via POST/DELETE /api/config/spell; mapConfig via POST
+  // /api/config/map; damageConfig via POST /api/config/damage.
   const userState = { ...body };
   delete userState.animations;
   delete userState.characterSeed;
@@ -55,6 +60,8 @@ export async function POST(req: NextRequest) {
   delete userState.roleMaps;
   delete userState.mapConfig;
   delete userState.damageConfig;
+  delete userState.spells;
+  delete userState.characterSpells;
   writeUserState(userState);
   return NextResponse.json({ ok: true });
 }

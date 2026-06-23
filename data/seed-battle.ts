@@ -23,13 +23,23 @@
 import {
   upsertBattleStats,
   upsertRoleMap,
+  upsertSpell,
+  setCharacterSpells,
   pruneBattleData,
   getBattleStats,
   getCharacterRoleMaps,
 } from "../app/api/config/db";
-import type { UnitStats, CharacterRoleMap } from "../lib/battle/types";
+import type {
+  UnitStats,
+  CharacterRoleMap,
+  SpellDef,
+} from "../lib/battle/types";
 
-type CharacterSeed = { stats: UnitStats; roles: CharacterRoleMap };
+type CharacterSeed = {
+  stats: UnitStats;
+  roles: CharacterRoleMap;
+  spells: string[];
+};
 
 // john + john-copy share one mapping: john-copy has no own frames and renders
 // through the global john-* catalog, so the same keys drive both.
@@ -41,6 +51,11 @@ const JOHN_ROLES: CharacterRoleMap = {
   death: "john-defeated",
 };
 
+// Global spell catalog seeded into `spells`; characters own ids from it.
+const SPELLS: SpellDef[] = [
+  { id: "fireball", name: "Fireball", animationKey: "john-spell", type: "attack", power: 2, cooldown: 6 },
+];
+
 const ROSTER: Record<string, CharacterSeed> = {
   john: {
     stats: {
@@ -50,8 +65,10 @@ const ROSTER: Record<string, CharacterSeed> = {
       actionSpeed: 80,
       range: 1,
       skills: ["shield_bash"],
+      attackType: "melee",
     },
     roles: JOHN_ROLES,
+    spells: ["fireball"],
   },
   "john-copy": {
     stats: {
@@ -61,14 +78,21 @@ const ROSTER: Record<string, CharacterSeed> = {
       actionSpeed: 74,
       range: 1,
       skills: ["shield_bash"],
+      attackType: "melee",
     },
     roles: JOHN_ROLES,
+    spells: ["fireball"],
   },
 };
+
+for (const spell of SPELLS) {
+  upsertSpell(spell);
+}
 
 for (const [characterId, seed] of Object.entries(ROSTER)) {
   upsertBattleStats(characterId, seed.stats);
   upsertRoleMap(characterId, seed.roles);
+  setCharacterSpells(characterId, seed.spells);
   console.log(`seeded battle data for "${characterId}"`);
 }
 

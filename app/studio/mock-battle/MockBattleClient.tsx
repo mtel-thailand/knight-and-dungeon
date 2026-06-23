@@ -11,6 +11,8 @@ import type {
   PartyMemberInput,
   ResolveRequest,
   ResolveResult,
+  SpellDef,
+  SpellInput,
   Team,
   UnitStats,
 } from "@/lib/battle/types";
@@ -38,6 +40,7 @@ const ATTACK_MS = 220;
 const HIT_MS = 180;
 const DEATH_MS = 260;
 const KNOCKBACK_MS = 200;
+const SPELL_FLIGHT_MS = 360; // projectile travel time, caster -> target
 const HPBAR_MS = 180;
 const INTER_BEAT_MS = 80; // breathing room between equal-`t` beats
 
@@ -169,6 +172,8 @@ type BootstrapConfig = {
   roleMaps?: Record<string, CharacterRoleMap>;
   mapConfig?: MapConfig;
   damageConfig?: DamageCfg;
+  spells?: SpellDef[];
+  characterSpells?: Record<string, string[]>;
 };
 
 function normalizeConfig(data: any): BootstrapConfig {
@@ -183,6 +188,8 @@ function normalizeConfig(data: any): BootstrapConfig {
     roleMaps: data?.roleMaps ?? {},
     mapConfig: data?.mapConfig ?? { ...DEFAULT_MAP },
     damageConfig: data?.damageConfig ?? { ...DEFAULT_DAMAGE_CONFIG },
+    spells: Array.isArray(data?.spells) ? data.spells : [],
+    characterSpells: data?.characterSpells ?? {},
   };
 }
 
@@ -450,6 +457,11 @@ type SpriteUnit = {
   q: number;
   r: number;
   dead: boolean;
+  // Body horizontal facing as a scale-X SIGN: 1 = right (the art's authored
+  // direction), -1 = left. Set from the current target's board row and applied
+  // at the node; it survives relayout because relayout multiplies node.scale.x
+  // by it (so board-config changes never lose the facing).
+  facing: 1 | -1;
 };
 
 type StageProps = {
@@ -507,14 +519,21 @@ function BattleStage({
       wrapper.style.cssText = "position:absolute; inset:0;";
       container.appendChild(wrapper);
 
+      // Cap the canvas render scale (applied to `resolution` below). Lower = fewer
+      // pixels filled per frame (the biggest GPU lever here) at the cost of softer
+      // text/vector edges; the pixel-art sprites tolerate a lower cap well. 2 = no
+      // change on a typical 2x-retina display — drop to 1.5 / 1 and hard-reload to
+      // A/B the perf-vs-crispness trade-off.
+      const MAX_RENDER_SCALE = 2;
       pixiApp = new Application();
       await pixiApp.init({
         resizeTo: wrapper,
         backgroundAlpha: 0,
         antialias: true,
-        // Render at the device pixel ratio (crisp text/vectors on HiDPI); without
-        // this the canvas rasterizes at 1x and is CSS-upscaled -> blurry.
-        resolution: window.devicePixelRatio || 1,
+        // Render at the device pixel ratio (crisp text/vectors on HiDPI; without
+        // it the canvas rasterizes at 1x and is CSS-upscaled -> blurry), but CAP
+        // it so high-DPR phones don't pay to fill ~9x the pixels every frame.
+        resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_SCALE),
         autoDensity: true,
       });
       if (destroyed) {
@@ -539,13 +558,82 @@ function BattleStage({
       // ---- Frames: build once, share Texture[] across every unit (122-159) ----
       const catalog: any[] = config.animations ?? [];
       const framesByKey: Record<string, any[]> = {};
-      // Load every sheet's PNG + parse its frames CONCURRENTLY. Pixi's Assets
-      // queue de-dupes/parallelizes the network+decode, so this overlaps what
-      // used to be a strictly sequential await-per-row — the slow part of the
-      // pre-battle load. Failures stay isolated per row.
+      // ---- Load only the sheets THIS battle needs ----
+      // Loading the whole catalog (~35 sheets) up front is slow on prod and OOMs
+      // phones; a 1v1 needs ~2 characters. Compute the catalog keys the replay can
+      // request for the battle's characters, mirroring the SAME key sources
+      // ownedKeys/clipForRole/basePose draw from (character_animations / seed,
+      // authored Actions' steps, role-map values), then load only those rows.
+      // NOTE: clipForRole/ownedKeys aren't reusable here — they return frames and
+      // read framesByKey, which isn't populated until the load below; so this
+      // walks the key sources directly (key-level, pre-load).
+      const catalogByKey: Record<string, any> = {};
+      for (const c of catalog) catalogByKey[c.key] = c;
+      const neededKeys = new Set<string>();
+      const battleCharIds = new Set(
+        result.initialState.units.map((u) => u.characterId),
+      );
+      for (const charId of battleCharIds) {
+        // owned art: character_animations blob, else characterSeed keys
+        const ca = config.characterAnimations?.[charId];
+        const owned =
+          ca && ca.length
+            ? ca
+            : Object.keys(config.characterSeed?.[charId]?.animations ?? {});
+        for (const k of owned) neededKeys.add(k);
+        // every authored Action's animation steps (covers role-map Action ids +
+        // name-inferred actions, which clipForRole flattens to these keys)
+        for (const raw of config.actions?.[charId] ?? []) {
+          const steps = Array.isArray(raw?.steps)
+            ? raw.steps
+            : (raw?.animationKeys ?? []).map((k: string) => ({
+                type: "animation",
+                animationKey: k,
+              }));
+          for (const s of steps)
+            if (s?.type === "animation" && s.animationKey)
+              neededKeys.add(s.animationKey);
+        }
+        // role-map values that are raw animation keys (Action-id values are
+        // already covered by the Action steps above)
+        const rm = config.roleMaps?.[charId];
+        if (rm)
+          for (const role of [
+            "idle",
+            "move",
+            "attack",
+            "hit",
+            "death",
+          ] as BattleEventRole[]) {
+            const v = rm[role];
+            if (v) neededKeys.add(v);
+          }
+        // owned spells' projectile sheets (so flyProjectile can play their art)
+        for (const sid of config.characterSpells?.[charId] ?? []) {
+          const sp = (config.spells ?? []).find((s) => s.id === sid);
+          if (sp?.animationKey) neededKeys.add(sp.animationKey);
+        }
+      }
+      // deriveFrom chains: a needed derived key needs its BASE image loaded
+      // (framesForKey resolves derived frames from framesByKey[deriveFrom]) —
+      // e.g. john-copy-* -> john-*. Walk the full chain, guarding cycles.
+      for (const k of [...neededKeys]) {
+        let row = catalogByKey[k];
+        const seen = new Set<string>();
+        while (row?.deriveFrom && !seen.has(row.deriveFrom)) {
+          seen.add(row.deriveFrom);
+          neededKeys.add(row.deriveFrom);
+          row = catalogByKey[row.deriveFrom];
+        }
+      }
+
+      // Load each needed sheet's PNG + parse its frames CONCURRENTLY. Pixi's
+      // Assets queue de-dupes/parallelizes the network+decode; failures stay
+      // isolated per row.
       await Promise.all(
         catalog.map(async (c) => {
           if (!c.image || !c.frameData) return;
+          if (!neededKeys.has(c.key)) return; // skip sheets this battle won't use
           try {
             const texture = await Assets.load(`/assets/${c.image}`);
             if (destroyed) return;
@@ -800,9 +888,20 @@ function BattleStage({
         // Viewport: overall zoom + pitch/yaw foreshorten, around the screen center.
         viewport.pivot.set(0, 0);
         viewport.rotation = 0;
+        // Responsive fit: the mapConfig (tileWidth/scale) is MASTER DATA authored
+        // against a reference square field of BOARD_REF_SIDE px. Scale the whole
+        // board by (live field side / reference) so it occupies the SAME fraction
+        // of the field at ANY size — fixing the "doesn't scale even at 1:1" gap
+        // where the absolute-px board floated at a fixed size while the bg filled.
+        // centerBoard re-runs on resize, so this stays live; units / HP bars /
+        // damage ride the board and track it for free (TW0 cancels out of the
+        // footprint, so their relative proportions and crispness are unchanged).
+        const BOARD_REF_SIDE = 640; // px; the field side the board view is tuned at
+        const fitScale =
+          Math.min(pixiApp.screen.width, pixiApp.screen.height) / BOARD_REF_SIDE;
         viewport.scale.set(
-          boardScale * Math.cos(rotYRad),
-          boardScale * Math.cos(rotXRad),
+          boardScale * fitScale * Math.cos(rotYRad),
+          boardScale * fitScale * Math.cos(rotXRad),
         );
         // Bottom-anchor the board to the center band: drop it so the front-most
         // tile edge rests just inside the bottom border (the Pixi host fills
@@ -818,6 +917,7 @@ function BattleStage({
           (Math.abs(halfW * Math.sin(rotRad)) +
             Math.abs(halfH * Math.cos(rotRad))) *
           boardScale *
+          fitScale *
           Math.cos(rotXRad);
         const BOTTOM_INSET = 8; // so the inner ring/vignette doesn't clip the edge
         viewport.position.set(
@@ -884,7 +984,9 @@ function BattleStage({
           const p = pixelOf(su.q, su.r);
           su.node.position.set(p.x, p.y);
           su.node.rotation = -rotRad;
-          su.node.scale.set(k * isx, k * isy); // upright, unsquashed billboard
+          // Upright, unsquashed billboard; the X scale also carries su.facing's
+          // sign so the body faces its target — and that survives every relayout.
+          su.node.scale.set(k * isx * su.facing, k * isy);
         }
         centerBoard();
       }
@@ -973,7 +1075,10 @@ function BattleStage({
         }
 
         const absScale = Math.abs(body.scale.x) || 1;
-        body.scale.x = absScale * (u.team === "enemy" ? -1 : 1); // face inward
+        // Art is authored facing RIGHT; horizontal facing is now driven by the
+        // unit's current target row and applied at the node (su.facing), so the
+        // body keeps its natural (positive) X scale — no team-based flip here.
+        body.scale.x = absScale;
 
         const barBg = new Graphics();
         const accent = new Graphics();
@@ -1004,6 +1109,7 @@ function BattleStage({
           q: u.position.q,
           r: u.position.r,
           dead: false,
+          facing: 1, // default right (art's authored direction); set on engage
         };
         // Paint the bar from the live config now that the SpriteUnit exists
         // (defaults reproduce the original geometry exactly).
@@ -1228,6 +1334,46 @@ function BattleStage({
         );
       }
 
+      // A spell projectile: an AnimatedSprite that flies caster -> target along a
+      // straight line over SPELL_FLIGHT_MS, then destroys itself. Empty frames (no
+      // projectile art) -> just wait the span so impact still lands on arrival.
+      function flyProjectile(
+        spellId: string,
+        from: HexPosition,
+        to: HexPosition,
+        myId: number,
+      ): Promise<void> {
+        const sp = (config.spells ?? []).find((s) => s.id === spellId);
+        const frames = sp ? framesForKey(sp.animationKey) : [];
+        const a = pixelOf(from.q, from.r);
+        const b = pixelOf(to.q, to.r);
+        if (!frames.length) return wait(SPELL_FLIGHT_MS); // no art -> preserve timing
+        const proj = new AnimatedSprite(frames);
+        proj.anchor.set(0.5);
+        proj.loop = true;
+        proj.scale.set(tileW / TW0, tileW / TW0);
+        proj.animationSpeed = frames.length / (0.4 * TICKER_FPS);
+        proj.rotation = Math.atan2(b.y - a.y, b.x - a.x);
+        proj.position.set(a.x, a.y);
+        proj.zIndex = 9999;
+        unitsLayer.addChild(proj);
+        proj.play();
+        return tween(
+          SPELL_FLIGHT_MS,
+          (p) => {
+            const e = easeInOutQuad(p);
+            proj.position.set(lerp(a.x, b.x, e), lerp(a.y, b.y, e));
+          },
+          myId,
+        ).then(() => {
+          try {
+            proj.destroy();
+          } catch {
+            /* already torn down */
+          }
+        });
+      }
+
       async function doMove(
         su: SpriteUnit,
         from: HexPosition,
@@ -1264,6 +1410,14 @@ function BattleStage({
         target: SpriteUnit | undefined,
         myId: number,
       ) {
+        // Face the target by board row: LEFT if the target sits in a lower row,
+        // RIGHT if higher; unchanged (default right) for same-row / no-target.
+        // Apply to the live node now (mirrors relayout's k*isx) so the flip shows
+        // during the swing; relayout re-derives it from su.facing on later edits.
+        if (target) {
+          su.facing = target.r < su.r ? -1 : 1;
+          su.node.scale.x = (tileW / TW0) * (1 / Math.cos(rotYRad)) * su.facing;
+        }
         const dir = target
           ? Math.sign(target.node.x - su.node.x) || (su.team === "player" ? 1 : -1)
           : su.team === "player"
@@ -1361,6 +1515,24 @@ function BattleStage({
                 await Promise.all(sub);
               }),
             );
+          } else if (ev.kind === "spellcast") {
+            const src = sprites[ev.sourceId];
+            const tgt = sprites[ev.targetId];
+            const ids = [ev.sourceId, ev.targetId].filter((id) => sprites[id]);
+            tasks.push(
+              schedule(ids, async () => {
+                // Cast wind-up reuses the attack pose (+ facing), THEN the
+                // projectile flies; HP/number land on arrival (impact-after-flight).
+                if (src && !src.dead) await doAttack(src, tgt, myId);
+                await flyProjectile(ev.spellId, ev.from, ev.to, myId);
+                if (destroyed || genId !== myId || !tgt) return;
+                await Promise.all([
+                  updateHp(tgt, ev.targetHp, myId),
+                  flashHit(tgt, myId),
+                ]);
+                spawnDamage(tgt, ev.damage, "skill", myId); // reuse gold "!" style
+              }),
+            );
           } else if (ev.kind === "death") {
             const su = sprites[ev.unitId];
             if (su)
@@ -1390,7 +1562,9 @@ function BattleStage({
           su.body.alpha = 1;
           su.body.rotation = 0;
           su.body.tint = su.baseTint;
-          su.body.scale.x = su.absScale * (su.team === "enemy" ? -1 : 1);
+          su.body.scale.x = su.absScale; // natural right-facing body scale
+          su.facing = 1; // default right for a clean re-watch
+          su.node.scale.x = (tileW / TW0) * (1 / Math.cos(rotYRad)) * su.facing;
           su.hpFill.visible = true;
           su.hpFill.scale.x = 1;
           su.hpFill.tint = hpColor(1);
@@ -1483,9 +1657,16 @@ type BuildUnit = {
   characterId: string;
   slot: number; // deploy index 0..maxPerSide-1 (NOT a raw q)
   stats: UnitStats;
+  // Tracked top-level (clampStats normalizes only the numeric stats); merged
+  // back into `stats` when building the resolve payload. Default "melee".
+  attackType: "melee" | "ranged";
 };
 
 const genUid = () => Math.random().toString(36).slice(2, 9);
+
+/** A possibly-absent attackType -> a definite 2-state value (default melee). */
+const attackTypeOf = (t: unknown): "melee" | "ranged" =>
+  t === "ranged" ? "ranged" : "melee";
 
 function BoardPreview({
   players,
@@ -1763,6 +1944,7 @@ export default function MockBattleClient() {
             characterId: playerChar.id,
             slot: mid,
             stats: statsFor(cfg, playerChar.id),
+            attackType: attackTypeOf(cfg.battleStats?.[playerChar.id]?.attackType),
           },
         ]);
         setEnemies([
@@ -1771,6 +1953,7 @@ export default function MockBattleClient() {
             characterId: enemyChar.id,
             slot: mid,
             stats: statsFor(cfg, enemyChar.id),
+            attackType: attackTypeOf(cfg.battleStats?.[enemyChar.id]?.attackType),
           },
         ]);
       }
@@ -1806,7 +1989,13 @@ export default function MockBattleClient() {
     if (list.length >= BOARD.maxPerSide) return;
     setList([
       ...list,
-      { uid: genUid(), characterId: charId, slot: nextFreeSlot(list), stats: statsFor(config, charId) },
+      {
+        uid: genUid(),
+        characterId: charId,
+        slot: nextFreeSlot(list),
+        stats: statsFor(config, charId),
+        attackType: attackTypeOf(config.battleStats?.[charId]?.attackType),
+      },
     ]);
   }
   function removeUnit(team: Team, uid: string) {
@@ -1833,6 +2022,10 @@ export default function MockBattleClient() {
       ),
     );
   }
+  function setAttackType(team: Team, uid: string, attackType: "melee" | "ranged") {
+    const { list, setList } = partyOps(team);
+    setList(list.map((u) => (u.uid === uid ? { ...u, attackType } : u)));
+  }
   function toggleSkill(team: Team, uid: string, skillId: string) {
     const { list, setList } = partyOps(team);
     setList(
@@ -1854,12 +2047,30 @@ export default function MockBattleClient() {
 
   async function startFight() {
     if (!config || players.length === 0 || enemies.length === 0) return;
+    // Resolve each member's owned spell ids -> the engine's SpellInput configs.
+    const spellById = new Map(
+      (config.spells ?? []).map((s) => [s.id, s] as const),
+    );
+    const spellsFor = (charId: string): SpellInput[] =>
+      (config.characterSpells?.[charId] ?? [])
+        .map((id) => spellById.get(id))
+        .filter((s): s is SpellDef => !!s)
+        .map((s) => ({
+          id: s.id,
+          power: s.power,
+          cooldown: s.cooldown,
+          type: s.type,
+          animationKey: s.animationKey,
+        }));
     const toInput =
       (team: Team) =>
       (u: BuildUnit): PartyMemberInput => ({
         characterId: u.characterId,
-        stats: clampStats(u.stats),
+        // Merge the per-unit attack type back into the stats sent to the engine
+        // (clampStats normalizes only the numeric fields).
+        stats: { ...clampStats(u.stats), attackType: u.attackType },
         position: deployHex(team, u.slot),
+        spells: spellsFor(u.characterId),
       });
     const req: ResolveRequest = {
       players: players.map(toInput("player")),
@@ -1961,6 +2172,7 @@ export default function MockBattleClient() {
                   onSlot={(uid, s) => setSlot("player", uid, s)}
                   onStat={(uid, k, v) => setStat("player", uid, k, v)}
                   onSkill={(uid, s) => toggleSkill("player", uid, s)}
+                  onAttackType={(uid, t) => setAttackType("player", uid, t)}
                 />
 
                 <div className="mb-center-col">
@@ -1996,6 +2208,7 @@ export default function MockBattleClient() {
                   onSlot={(uid, s) => setSlot("enemy", uid, s)}
                   onStat={(uid, k, v) => setStat("enemy", uid, k, v)}
                   onSkill={(uid, s) => toggleSkill("enemy", uid, s)}
+                  onAttackType={(uid, t) => setAttackType("enemy", uid, t)}
                 />
               </div>
             </div>
@@ -2117,6 +2330,7 @@ function PartyColumn({
   onSlot,
   onStat,
   onSkill,
+  onAttackType,
 }: {
   team: Team;
   title: string;
@@ -2128,6 +2342,7 @@ function PartyColumn({
   onSlot: (uid: string, slot: number) => void;
   onStat: (uid: string, key: keyof UnitStats, value: number) => void;
   onSkill: (uid: string, skillId: string) => void;
+  onAttackType: (uid: string, attackType: "melee" | "ranged") => void;
 }) {
   const full = list.length >= BOARD.maxPerSide;
   return (
@@ -2185,6 +2400,25 @@ function PartyColumn({
                   onClick={() => onSlot(u.uid, q)}
                 >
                   {q + 1}
+                </button>
+              ))}
+            </div>
+
+            <div className="mb-slot-row">
+              <span
+                className="mb-slot-label"
+                title="Melee can't hit an enemy in the same row; ranged can."
+              >
+                Attack
+              </span>
+              {(["melee", "ranged"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`mb-atk-pill ${u.attackType === t ? "on" : ""}`}
+                  onClick={() => onAttackType(u.uid, t)}
+                >
+                  {t === "melee" ? "Melee" : "Ranged"}
                 </button>
               ))}
             </div>
@@ -2507,6 +2741,15 @@ const CSS = `
 .mb-slot-pill:hover { border-color: rgba(255,255,255,0.3); }
 .mb-party.player .mb-slot-pill.on { background: rgba(56,224,196,0.25); border-color: #38e0c4; color: #fff; }
 .mb-party.enemy .mb-slot-pill.on { background: rgba(255,93,115,0.25); border-color: #ff5d73; color: #fff; }
+.mb-atk-pill {
+  height: 24px; padding: 0 10px; border-radius: 6px; cursor: pointer;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.55); font-size: 11px; font-family: system-ui, sans-serif;
+  transition: all 0.12s;
+}
+.mb-atk-pill:hover { border-color: rgba(255,255,255,0.3); }
+.mb-party.player .mb-atk-pill.on { background: rgba(56,224,196,0.25); border-color: #38e0c4; color: #fff; }
+.mb-party.enemy .mb-atk-pill.on { background: rgba(255,93,115,0.25); border-color: #ff5d73; color: #fff; }
 
 .mb-stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
 .mb-stat { display: flex; flex-direction: column; gap: 3px; }

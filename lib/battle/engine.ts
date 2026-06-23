@@ -13,6 +13,7 @@ import type {
   Team,
   Unit,
   Skill,
+  SpellInput,
   Action,
   BattleState,
   BattleSnapshot,
@@ -20,7 +21,7 @@ import type {
   ResolveRequest,
   ResolveResult,
 } from "./types";
-import { MAX_BATTLE_TIME, BATTLE_TICK } from "./types";
+import { MAX_BATTLE_TIME, BATTLE_TICK, DEFAULT_ATTACK_TYPE } from "./types";
 import {
   VALID_HEXES,
   hexDistance,
@@ -101,6 +102,32 @@ export function selectTarget(unit: Unit, battle: BattleState): Unit | null {
   })[0];
 }
 
+// Melee units cannot engage a target sharing their row (r); ranged is unrestricted.
+// (attackType is orthogonal to `range`.)
+function canEngage(unit: Unit, target: Unit): boolean {
+  return unit.attackType !== "melee" || target.position.r !== unit.position.r;
+}
+
+// selectTarget's priority restricted to targets this unit is ALLOWED to attack
+// (the melee same-row rule). Used for the skill/attack decision; movement falls
+// back to selectTarget so a melee unit keeps closing on the nearest enemy (and
+// repositions) when only same-row enemies are reachable, rather than freezing.
+function selectEngageTarget(unit: Unit, battle: BattleState): Unit | null {
+  const enemies = battle.units.filter(
+    (u) => !u.isDead && u.team !== unit.team && canEngage(unit, u),
+  );
+  if (enemies.length === 0) return null;
+
+  return enemies.sort((a, b) => {
+    const da = hexDistance(unit.position, a.position);
+    const db = hexDistance(unit.position, b.position);
+    if (da !== db) return da - db;
+    if (a.hp !== b.hp) return a.hp - b.hp;
+    if (a.position.r !== b.position.r) return a.position.r - b.position.r;
+    return a.position.q - b.position.q;
+  })[0];
+}
+
 // First owned skill (in skills[] order) that is registered, ready, and in range.
 // Only `shield_bash` is registered for the MVP, so this reduces exactly to:
 // fire iff unit.skills.includes("shield_bash") && isSkillReady && distance <= range.
@@ -114,27 +141,57 @@ function pickUsableSkill(unit: Unit, distance: number): Skill | null {
   return null;
 }
 
+// A spell is ready when its `spell:`-namespaced cooldown is clear (absent = ready).
+// Namespacing avoids collisions with skill ids in the shared unit.cooldowns map.
+function isSpellReady(unit: Unit, spellId: string): boolean {
+  const cd = unit.cooldowns[`spell:${spellId}`];
+  return cd === undefined || cd <= 0;
+}
+
+// First owned spell (payload order = deterministic) that is an attack and ready.
+// Magic has no range/row gate, so usability is type + cooldown only.
+function pickUsableSpell(unit: Unit): SpellInput | null {
+  for (const sp of unit.spells) {
+    if (sp.type !== "attack") continue;
+    if (isSpellReady(unit, sp.id)) return sp;
+  }
+  return null;
+}
+
 // ---- Decision logic (one function for both teams) ----
 
 // Priority: usable skill (Shield Bash) -> basic attack in range -> step toward target.
 export function decideUnitAction(unit: Unit, battle: BattleState): Action {
-  const target = selectTarget(unit, battle);
-  if (!target) return { type: "wait", sourceId: unit.id };
+  // Nearest living enemy drives every branch (movement goal + spell/attack pick).
+  const nearest = selectTarget(unit, battle);
+  if (!nearest) return { type: "wait", sourceId: unit.id };
 
-  const distance = hexDistance(unit.position, target.position);
-
-  const skill = pickUsableSkill(unit, distance);
-  if (skill) {
-    return {
-      type: "skill",
-      skillId: skill.id,
-      sourceId: unit.id,
-      targetId: target.id,
-    };
+  // 1) SPELL (magic): cooldown-gated, ANY range/row — takes priority over skill/attack.
+  const spell = pickUsableSpell(unit);
+  if (spell) {
+    return { type: "spell", spellId: spell.id, sourceId: unit.id, targetId: nearest.id };
   }
 
-  if (distance <= unit.range) {
-    return { type: "attack", sourceId: unit.id, targetId: target.id };
+  // 2-4) Melee same-row rule: only engage (skill/attack) a DIFFERENT-row target; else
+  // move toward the nearest enemy. (No spells + this block == the prior behavior, so a
+  // spell-less request stays byte-identical: engageTarget ?? nearest === the old target.)
+  const engageTarget = selectEngageTarget(unit, battle);
+  const target = engageTarget ?? nearest;
+  const distance = hexDistance(unit.position, target.position);
+
+  if (engageTarget) {
+    const skill = pickUsableSkill(unit, distance);
+    if (skill) {
+      return {
+        type: "skill",
+        skillId: skill.id,
+        sourceId: unit.id,
+        targetId: engageTarget.id,
+      };
+    }
+    if (distance <= unit.range) {
+      return { type: "attack", sourceId: unit.id, targetId: engageTarget.id };
+    }
   }
 
   return {
@@ -227,6 +284,29 @@ export function executeAction(action: Action, battle: BattleState): void {
         push: pushed
           ? { from: pushFrom, to: { q: target.position.q, r: target.position.r } }
           : undefined,
+      });
+      return;
+    }
+
+    case "spell": {
+      const target = getUnitById(battle, action.targetId);
+      if (!target || target.isDead) return; // stale-target guard
+      const spell = source.spells.find((s) => s.id === action.spellId);
+      if (!spell) return; // unknown spell id (defensive)
+      // MAGIC: caster.attack * power, IGNORES defense; integer, min 1.
+      const damage = Math.max(1, Math.floor(source.attack * spell.power));
+      applyDamage(target, damage);
+      source.cooldowns[`spell:${spell.id}`] = spell.cooldown; // set cooldown on use
+      battle.events.push({
+        t,
+        kind: "spellcast",
+        sourceId: source.id,
+        targetId: target.id,
+        spellId: spell.id,
+        from: { q: source.position.q, r: source.position.r },
+        to: { q: target.position.q, r: target.position.r },
+        damage,
+        targetHp: target.hp,
       });
       return;
     }
@@ -328,6 +408,8 @@ function buildUnit(input: PartyMemberInput, team: Team): Unit {
     actionSpeed: s.actionSpeed,
     actionGauge: 0,
     range: s.range,
+    attackType: s.attackType ?? DEFAULT_ATTACK_TYPE,
+    spells: [...(input.spells ?? [])],
     skills: [...s.skills],
     position: { q: input.position.q, r: input.position.r },
     cooldowns: {},

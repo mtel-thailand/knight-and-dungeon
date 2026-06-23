@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs";
+import os from "os";
 import Database from "better-sqlite3";
 import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG } from "@/lib/battle/types";
 import type {
@@ -8,10 +9,22 @@ import type {
   BattleEventRole,
   MapConfig,
   DamageConfig,
+  SpellDef,
+  SpellType,
 } from "@/lib/battle/types";
 
 const DB_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIR, "app.db");
+
+// Serverless (Vercel) has a read-only filesystem except /tmp, and data/app.db
+// isn't deployed — so the seeded snapshot data/seed/app.db (bundled via
+// next.config `outputFileTracingIncludes`, resolved from process.cwd()) is
+// copied to /tmp once per cold start and opened there read-write. Those writes
+// are EPHEMERAL (reset on a new/cold instance) — fine for a preview/test deploy,
+// not durable authoring. Local dev keeps using data/app.db unchanged.
+const ON_VERCEL = process.env.VERCEL === "1";
+const SEED_DB = path.join(DB_DIR, "seed", "app.db");
+const RUNTIME_DB = ON_VERCEL ? path.join(os.tmpdir(), "app.db") : DB_PATH;
 
 // Cache the connection on globalThis so Next.js dev hot-reload doesn't open a
 // new handle / re-run setup on every request.
@@ -20,8 +33,13 @@ const globalForDb = globalThis as unknown as {
 };
 
 function createDb(): Database.Database {
-  fs.mkdirSync(DB_DIR, { recursive: true });
-  const db = new Database(DB_PATH);
+  if (ON_VERCEL) {
+    // Cold-start seed: copy the bundled read-only snapshot into writable /tmp.
+    if (!fs.existsSync(RUNTIME_DB)) fs.copyFileSync(SEED_DB, RUNTIME_DB);
+  } else {
+    fs.mkdirSync(DB_DIR, { recursive: true });
+  }
+  const db = new Database(RUNTIME_DB);
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");
   db.exec(`
@@ -53,7 +71,8 @@ function createDb(): Database.Database {
       defense       INTEGER NOT NULL,
       action_speed  REAL    NOT NULL,
       "range"       INTEGER NOT NULL,
-      skills        TEXT    NOT NULL DEFAULT '[]'
+      skills        TEXT    NOT NULL DEFAULT '[]',
+      attack_type   TEXT    NOT NULL DEFAULT 'melee'
     );
     CREATE TABLE IF NOT EXISTS character_event_roles (
       character_id  TEXT NOT NULL,
@@ -71,6 +90,21 @@ function createDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS damage_config (
       id   INTEGER PRIMARY KEY CHECK (id = 1),
       data TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS spells (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL,
+      animation_key TEXT,
+      type          TEXT NOT NULL DEFAULT 'attack',
+      power         REAL NOT NULL DEFAULT 1,
+      cooldown      REAL NOT NULL DEFAULT 0,
+      sort_order    INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS character_spells (
+      character_id TEXT NOT NULL,
+      spell_id     TEXT NOT NULL,
+      sort_order   INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (character_id, spell_id)
     );
   `);
   // Migration: battle_map_config predates rotation_x / rotation_y. CREATE TABLE
@@ -91,6 +125,22 @@ function createDb(): Database.Database {
   if (!mapCols.has("rotation_y")) {
     db.exec(
       "ALTER TABLE battle_map_config ADD COLUMN rotation_y REAL NOT NULL DEFAULT 0",
+    );
+  }
+  // Migration: character_battle_stats predates attack_type. Existing DBs (incl.
+  // data/app.db and the bundled data/seed/app.db copied to /tmp on Vercel) won't
+  // get the new column from CREATE TABLE IF NOT EXISTS, so add it here, guarded
+  // by a column check so the ALTER is a no-op once applied.
+  const statCols = new Set(
+    (
+      db
+        .prepare("SELECT name FROM pragma_table_info('character_battle_stats')")
+        .all() as Array<{ name: string }>
+    ).map((c) => c.name),
+  );
+  if (!statCols.has("attack_type")) {
+    db.exec(
+      "ALTER TABLE character_battle_stats ADD COLUMN attack_type TEXT NOT NULL DEFAULT 'melee'",
     );
   }
   return db;
@@ -279,6 +329,7 @@ export function deleteCharacter(id: string): void {
     db.prepare("DELETE FROM character_animations WHERE character_id = ?").run(
       id,
     );
+    db.prepare("DELETE FROM character_spells WHERE character_id = ?").run(id);
     const row = db.prepare("SELECT data FROM app_config WHERE id = 1").get() as
       | { data: string }
       | undefined;
@@ -328,7 +379,7 @@ function parseSkills(raw: string | null): string[] {
 export function getBattleStats(): Record<string, UnitStats> {
   const rows = getDb()
     .prepare(
-      `SELECT character_id, hp, attack, defense, action_speed, "range", skills
+      `SELECT character_id, hp, attack, defense, action_speed, "range", skills, attack_type
          FROM character_battle_stats ORDER BY character_id`,
     )
     .all() as Array<{
@@ -339,6 +390,7 @@ export function getBattleStats(): Record<string, UnitStats> {
     action_speed: number;
     range: number;
     skills: string | null;
+    attack_type: string | null;
   }>;
   const out: Record<string, UnitStats> = {};
   for (const r of rows) {
@@ -349,6 +401,7 @@ export function getBattleStats(): Record<string, UnitStats> {
       actionSpeed: r.action_speed,
       range: r.range,
       skills: parseSkills(r.skills),
+      attackType: (r.attack_type as "melee" | "ranged" | null) ?? "melee",
     };
   }
   return out;
@@ -374,15 +427,16 @@ export function upsertBattleStats(characterId: string, stats: UnitStats): void {
   getDb()
     .prepare(
       `INSERT INTO character_battle_stats
-         (character_id, hp, attack, defense, action_speed, "range", skills)
-         VALUES (@character_id, @hp, @attack, @defense, @action_speed, @range, @skills)
+         (character_id, hp, attack, defense, action_speed, "range", skills, attack_type)
+         VALUES (@character_id, @hp, @attack, @defense, @action_speed, @range, @skills, @attack_type)
        ON CONFLICT(character_id) DO UPDATE SET
          hp           = excluded.hp,
          attack       = excluded.attack,
          defense      = excluded.defense,
          action_speed = excluded.action_speed,
          "range"      = excluded."range",
-         skills       = excluded.skills`,
+         skills       = excluded.skills,
+         attack_type  = excluded.attack_type`,
     )
     .run({
       character_id: characterId,
@@ -392,6 +446,7 @@ export function upsertBattleStats(characterId: string, stats: UnitStats): void {
       action_speed: stats.actionSpeed,
       range: stats.range,
       skills: JSON.stringify(stats.skills ?? []),
+      attack_type: stats.attackType ?? "melee",
     });
 }
 
@@ -430,6 +485,7 @@ export function pruneBattleData(keepIds: string[]): void {
     if (keepIds.length === 0) {
       db.prepare("DELETE FROM character_battle_stats").run();
       db.prepare("DELETE FROM character_event_roles").run();
+      db.prepare("DELETE FROM character_spells").run();
       return;
     }
     const placeholders = keepIds.map(() => "?").join(", ");
@@ -438,6 +494,9 @@ export function pruneBattleData(keepIds: string[]): void {
     ).run(...keepIds);
     db.prepare(
       `DELETE FROM character_event_roles WHERE character_id NOT IN (${placeholders})`,
+    ).run(...keepIds);
+    db.prepare(
+      `DELETE FROM character_spells WHERE character_id NOT IN (${placeholders})`,
     ).run(...keepIds);
   })();
 }
@@ -533,4 +592,118 @@ export function saveDamageConfig(cfg: DamageConfig): void {
          ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
     )
     .run({ data: JSON.stringify(cfg) });
+}
+
+// ---------------------------------------------------------------------------
+// Spells (/studio/mock-battle) — a global spell catalog (`spells`) + per-character
+// ownership (`character_spells`). Surfaced read-only via GET /api/config
+// (spells / characterSpells); the catalog is authored through POST/DELETE
+// /api/config/spell, and ownership through POST /api/config/battle. Mirrors the
+// listAnimations / upsertRoleMap style above.
+// ---------------------------------------------------------------------------
+
+/** The global spell catalog, ordered by sort_order then id. */
+export function listSpells(): SpellDef[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, name, animation_key, type, power, cooldown
+         FROM spells ORDER BY sort_order, id`,
+    )
+    .all() as Array<{
+    id: string;
+    name: string;
+    animation_key: string | null;
+    type: string;
+    power: number;
+    cooldown: number;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    animationKey: r.animation_key ?? "",
+    type: r.type as SpellType,
+    power: r.power,
+    cooldown: r.cooldown,
+  }));
+}
+
+/** Per-character owned spell-id lists, keyed by character id (ordered). */
+export function getCharacterSpells(): Record<string, string[]> {
+  const rows = getDb()
+    .prepare(
+      `SELECT character_id, spell_id
+         FROM character_spells ORDER BY character_id, sort_order, spell_id`,
+    )
+    .all() as Array<{ character_id: string; spell_id: string }>;
+  const out: Record<string, string[]> = {};
+  for (const r of rows) (out[r.character_id] ??= []).push(r.spell_id);
+  return out;
+}
+
+/** Idempotent upsert of one spell-catalog entry (defaults: attack / power 1 / cd 0). */
+export function upsertSpell(s: {
+  id: string;
+  name: string;
+  animationKey?: string | null;
+  type?: SpellType;
+  power?: number;
+  cooldown?: number;
+  sortOrder?: number;
+}): void {
+  const db = getDb();
+  const sortOrder =
+    s.sortOrder ??
+    (
+      db
+        .prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM spells")
+        .get() as { n: number }
+    ).n;
+  db.prepare(
+    `INSERT INTO spells (id, name, animation_key, type, power, cooldown, sort_order)
+       VALUES (@id, @name, @animation_key, @type, @power, @cooldown, @sort_order)
+     ON CONFLICT(id) DO UPDATE SET
+       name          = excluded.name,
+       animation_key = excluded.animation_key,
+       type          = excluded.type,
+       power         = excluded.power,
+       cooldown      = excluded.cooldown`,
+  ).run({
+    id: s.id,
+    name: s.name,
+    animation_key: s.animationKey ?? null,
+    type: s.type ?? "attack",
+    power: s.power ?? 1,
+    cooldown: s.cooldown ?? 0,
+    sort_order: sortOrder,
+  });
+}
+
+/** Deletes a spell from the catalog AND from every character that owns it. */
+export function deleteSpell(id: string): void {
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare("DELETE FROM spells WHERE id = ?").run(id);
+    db.prepare("DELETE FROM character_spells WHERE spell_id = ?").run(id);
+  })();
+}
+
+/** Replace-all set of a character's owned spell ids (sort_order = array index). */
+export function setCharacterSpells(
+  characterId: string,
+  spellIds: string[],
+): void {
+  const db = getDb();
+  const insert = db.prepare(
+    `INSERT INTO character_spells (character_id, spell_id, sort_order)
+       VALUES (@character_id, @spell_id, @sort_order)
+     ON CONFLICT(character_id, spell_id) DO UPDATE SET sort_order = excluded.sort_order`,
+  );
+  db.transaction(() => {
+    db.prepare("DELETE FROM character_spells WHERE character_id = ?").run(
+      characterId,
+    );
+    spellIds.forEach((spellId, i) => {
+      insert.run({ character_id: characterId, spell_id: spellId, sort_order: i });
+    });
+  })();
 }

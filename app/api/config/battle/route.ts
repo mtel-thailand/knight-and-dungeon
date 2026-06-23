@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { upsertBattleStats, upsertRoleMap } from "../db";
+import { upsertBattleStats, upsertRoleMap, setCharacterSpells } from "../db";
 import type { UnitStats, CharacterRoleMap } from "@/lib/battle/types";
 
 export const runtime = "nodejs";
@@ -28,10 +28,11 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  const { characterId, stats, roles } = body as {
+  const { characterId, stats, roles, spells } = body as {
     characterId?: string;
     stats?: UnitStats;
     roles?: CharacterRoleMap;
+    spells?: string[];
   };
   if (typeof characterId !== "string" || !characterId) {
     return NextResponse.json(
@@ -41,5 +42,8 @@ export async function POST(req: NextRequest) {
   }
   if (stats) upsertBattleStats(characterId, stats);
   if (roles) upsertRoleMap(characterId, roles);
+  // Replace-all owned-spell list. Array.isArray (not truthy) so `spells: []`
+  // correctly clears ownership and a non-array can't reach setCharacterSpells.
+  if (Array.isArray(spells)) setCharacterSpells(characterId, spells);
   return NextResponse.json({ ok: true });
 }

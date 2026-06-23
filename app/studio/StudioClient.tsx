@@ -9,8 +9,9 @@ import type {
   UnitStats,
   CharacterRoleMap,
   BattleEventRole,
+  SpellDef,
 } from "@/lib/battle/types";
-import { STAT_BOUNDS } from "@/lib/battle/types";
+import { STAT_BOUNDS, SPELL_BOUNDS, DEFAULT_SPELL_TYPE } from "@/lib/battle/types";
 import {
   SOURCE_FPS,
   TICKER_FPS,
@@ -46,6 +47,7 @@ export default function StudioClient() {
   const containerRef = useRef<HTMLDivElement>(null);
   const toggleCharPanelRef = useRef<(() => void) | null>(null);
   const toggleBattlePanelRef = useRef<(() => boolean) | null>(null);
+  const toggleSpellsPanelRef = useRef<(() => boolean) | null>(null);
 
   useEffect(() => {
     const container = containerRef.current!;
@@ -96,6 +98,8 @@ export default function StudioClient() {
         characterSeed: {},
         battleStats: {},
         roleMaps: {},
+        spells: [],
+        characterSpells: {},
       };
       try {
         const res = await fetch("/api/config");
@@ -1821,6 +1825,17 @@ export default function StudioClient() {
       const roleMapsState: Record<string, CharacterRoleMap> = {
         ...(bootstrap.roleMaps ?? {}),
       };
+      // Global spell catalog (top-level entities, like characters) + per-character
+      // ownership. Working copies seeded from the bootstrap: the Spells panel
+      // mutates spellsState; the Battle panel's Spells section mutates
+      // characterSpellsState. Cloned so edits don't touch the bootstrap payload.
+      const spellsState: SpellDef[] = Array.isArray(bootstrap.spells)
+        ? bootstrap.spells.map((s) => ({ ...s }))
+        : [];
+      const characterSpellsState: Record<string, string[]> = {};
+      Object.entries(bootstrap.characterSpells ?? {}).forEach(([cid, ids]) => {
+        characterSpellsState[cid] = Array.isArray(ids) ? [...ids] : [];
+      });
 
       // Normalize + store the live stats/roles object for a character (created
       // on first view so Save always has a complete object to send). Called
@@ -1882,11 +1897,28 @@ export default function StudioClient() {
         characterId: string;
         stats?: UnitStats;
         roles?: CharacterRoleMap;
+        spells?: string[];
       }) {
         fetch("/api/config/battle", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+        }).catch(() => {});
+      }
+
+      // Global spell defs persist on their own endpoint (separate from the
+      // per-character battle write). Fire-and-forget + caught so the CMS still
+      // works locally if the server lane isn't live yet.
+      function saveSpell(spell: SpellDef) {
+        fetch("/api/config/spell", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spell }),
+        }).catch(() => {});
+      }
+      function deleteSpell(id: string) {
+        fetch(`/api/config/spell?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
         }).catch(() => {});
       }
 
@@ -1948,6 +1980,7 @@ export default function StudioClient() {
         max: number,
         step: number,
         onChange: (v: number) => void,
+        parent: HTMLElement = battleContent,
       ) {
         const row = document.createElement("div");
         row.className = "battle-row";
@@ -1967,7 +2000,7 @@ export default function StudioClient() {
         });
         row.appendChild(lbl);
         row.appendChild(inp);
-        battleContent.appendChild(row);
+        parent.appendChild(row);
       }
 
       function addBattleSectionTitle(text: string) {
@@ -1977,7 +2010,11 @@ export default function StudioClient() {
         battleContent.appendChild(t);
       }
 
-      function makeBattleSaveBtn(text: string, onSave: () => void) {
+      function makeBattleSaveBtn(
+        text: string,
+        onSave: () => void,
+        parent: HTMLElement = battleContent,
+      ) {
         const btn = document.createElement("button");
         btn.className = "battle-save-btn";
         btn.textContent = text;
@@ -1985,7 +2022,7 @@ export default function StudioClient() {
           onSave();
           flashSaved(btn);
         });
-        battleContent.appendChild(btn);
+        parent.appendChild(btn);
         return btn;
       }
 
@@ -2116,6 +2153,54 @@ export default function StudioClient() {
         makeBattleSaveBtn("Save Skills", () =>
           saveBattle({ characterId: id, stats }),
         );
+
+        // 4) Spell ownership — which GLOBAL spells (from the Spells panel) this
+        //    character can cast. The list is DYNAMIC from spellsState (not
+        //    hardcoded like skills); persisted via POST /api/config/battle
+        //    { characterId, spells }.
+        addBattleSectionTitle("Spells");
+        if (!characterSpellsState[id]) characterSpellsState[id] = [];
+        if (spellsState.length === 0) {
+          const hint = document.createElement("div");
+          hint.className = "battle-hint";
+          hint.textContent =
+            "No spells defined yet — create them in the Spells panel.";
+          battleContent.appendChild(hint);
+        } else {
+          spellsState.forEach((spell) => {
+            const row = document.createElement("div");
+            row.className = "battle-row";
+            const lbl = document.createElement("span");
+            lbl.className = "battle-row-label";
+            lbl.textContent = spell.name;
+            const toggleLabel = document.createElement("label");
+            toggleLabel.className = "toggle-switch";
+            const inp = document.createElement("input");
+            inp.type = "checkbox";
+            inp.checked = (characterSpellsState[id] ?? []).includes(spell.id);
+            const track = document.createElement("span");
+            track.className = "toggle-track";
+            toggleLabel.appendChild(inp);
+            toggleLabel.appendChild(track);
+            inp.addEventListener("change", () => {
+              const cur = characterSpellsState[id] ?? [];
+              const has = cur.includes(spell.id);
+              if (inp.checked && !has)
+                characterSpellsState[id] = [...cur, spell.id];
+              else if (!inp.checked && has)
+                characterSpellsState[id] = cur.filter((s) => s !== spell.id);
+            });
+            row.appendChild(lbl);
+            row.appendChild(toggleLabel);
+            battleContent.appendChild(row);
+          });
+        }
+        makeBattleSaveBtn("Save Spells", () =>
+          saveBattle({
+            characterId: id,
+            spells: characterSpellsState[id] ?? [],
+          }),
+        );
       }
 
       battleCharSelect.addEventListener("change", () => {
@@ -2135,6 +2220,192 @@ export default function StudioClient() {
         return battlePanelOpen;
       }
       toggleBattlePanelRef.current = doToggleBattlePanel;
+
+      // --- Spells manager panel (CMS: global spell defs) ---
+      // Spells are GLOBAL entities (like characters), so they get their own
+      // top-level panel — NOT scoped to a character. Each spell binds a name, an
+      // animationKey from the FULL catalog (projectile art), power and cooldown.
+      // Create/edit → POST /api/config/spell; delete → DELETE. Characters pick
+      // which spells they own in the Battle panel's Spells section. Mirrors the
+      // Battle Data panel's placement/treatment (reuses .battle-panel styles).
+      const spellsPanel = document.createElement("div");
+      spellsPanel.className = "battle-panel";
+
+      const spellsTitle = document.createElement("div");
+      spellsTitle.className = "config-panel-title";
+      spellsTitle.textContent = "Spells";
+      spellsPanel.appendChild(spellsTitle);
+
+      const spellsContent = document.createElement("div");
+      spellsContent.className = "battle-content";
+      spellsPanel.appendChild(spellsContent);
+
+      // Animation <select> options = the full loaded catalog (spells are global,
+      // so they are NOT scoped to a character's kit). A stored key that's no
+      // longer in the catalog is kept as a "(missing)" option so saving doesn't
+      // silently drop it.
+      function fillSpellAnimSelect(sel: HTMLSelectElement, current: string) {
+        sel.innerHTML = "";
+        if (animations.length === 0) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "(no animations)";
+          sel.appendChild(opt);
+        }
+        animations.forEach((a) => {
+          const opt = document.createElement("option");
+          opt.value = a.configKey;
+          opt.textContent = a.label;
+          sel.appendChild(opt);
+        });
+        if (current && !animations.some((a) => a.configKey === current)) {
+          const opt = document.createElement("option");
+          opt.value = current;
+          opt.textContent = `${current} (missing)`;
+          sel.appendChild(opt);
+        }
+        sel.value = current;
+      }
+
+      function renderSpellsPanel() {
+        spellsContent.innerHTML = "";
+
+        if (spellsState.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "battle-hint";
+          empty.textContent = "No spells yet. Add one below.";
+          spellsContent.appendChild(empty);
+        }
+
+        spellsState.forEach((spell) => {
+          const card = document.createElement("div");
+          card.className = "spell-card";
+
+          // Head: name input + delete.
+          const head = document.createElement("div");
+          head.className = "spell-card-head";
+          const nameInput = document.createElement("input");
+          nameInput.type = "text";
+          nameInput.className = "spell-name-input";
+          nameInput.value = spell.name;
+          nameInput.placeholder = "Spell name";
+          nameInput.addEventListener("input", () => {
+            spell.name = nameInput.value;
+          });
+          const delBtn = document.createElement("button");
+          delBtn.className = "spell-del-btn";
+          delBtn.textContent = "✕";
+          delBtn.title = "Delete spell";
+          delBtn.addEventListener("click", () => {
+            deleteSpell(spell.id);
+            const i = spellsState.findIndex((s) => s.id === spell.id);
+            if (i >= 0) spellsState.splice(i, 1);
+            // Drop the deleted id from every character's ownership working copy.
+            Object.keys(characterSpellsState).forEach((cid) => {
+              characterSpellsState[cid] = (
+                characterSpellsState[cid] ?? []
+              ).filter((sid) => sid !== spell.id);
+            });
+            renderSpellsPanel();
+          });
+          head.appendChild(nameInput);
+          head.appendChild(delBtn);
+          card.appendChild(head);
+
+          // Animation binding — from the full catalog.
+          const animRow = document.createElement("div");
+          animRow.className = "battle-row";
+          const animLbl = document.createElement("span");
+          animLbl.className = "battle-row-label";
+          animLbl.textContent = "Animation";
+          const animSel = document.createElement("select");
+          animSel.className = "battle-select";
+          fillSpellAnimSelect(animSel, spell.animationKey);
+          animSel.addEventListener("change", () => {
+            spell.animationKey = animSel.value;
+          });
+          animRow.appendChild(animLbl);
+          animRow.appendChild(animSel);
+          card.appendChild(animRow);
+
+          // Power + cooldown — reuse the battle number-row helper into the card.
+          makeBattleNumRow(
+            "Power",
+            spell.power,
+            SPELL_BOUNDS.power.min,
+            SPELL_BOUNDS.power.max,
+            0.1,
+            (v) => {
+              spell.power = v;
+            },
+            card,
+          );
+          makeBattleNumRow(
+            "Cooldown",
+            spell.cooldown,
+            SPELL_BOUNDS.cooldown.min,
+            SPELL_BOUNDS.cooldown.max,
+            0.5,
+            (v) => {
+              spell.cooldown = v;
+            },
+            card,
+          );
+
+          makeBattleSaveBtn("Save Spell", () => saveSpell(spell), card);
+
+          spellsContent.appendChild(card);
+        });
+
+        // Add-spell form: name → slugify for the id (uniquified against existing).
+        const form = document.createElement("div");
+        form.className = "spell-add-form";
+        const addInput = document.createElement("input");
+        addInput.type = "text";
+        addInput.className = "char-new-input";
+        addInput.placeholder = "New spell name";
+        const addBtn = document.createElement("button");
+        addBtn.className = "char-add-btn";
+        addBtn.textContent = "Add spell";
+        function addSpell() {
+          const name = addInput.value.trim();
+          if (!name) return;
+          const base = slugify(name, "spell");
+          let id = base;
+          let n = 2;
+          while (spellsState.some((s) => s.id === id)) id = `${base}-${n++}`;
+          const spell: SpellDef = {
+            id,
+            name,
+            animationKey: animations[0]?.configKey ?? "",
+            type: DEFAULT_SPELL_TYPE,
+            power: 1,
+            cooldown: 0,
+          };
+          spellsState.push(spell);
+          saveSpell(spell);
+          addInput.value = "";
+          renderSpellsPanel();
+        }
+        addBtn.addEventListener("click", addSpell);
+        addInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") addSpell();
+        });
+        form.appendChild(addInput);
+        form.appendChild(addBtn);
+        spellsContent.appendChild(form);
+      }
+
+      container.appendChild(spellsPanel);
+
+      let spellsPanelOpen = false;
+      function doToggleSpellsPanel(): boolean {
+        spellsPanelOpen = !spellsPanelOpen;
+        if (spellsPanelOpen) renderSpellsPanel();
+        spellsPanel.classList.toggle("open", spellsPanelOpen);
+        return spellsPanelOpen;
+      }
+      toggleSpellsPanelRef.current = doToggleSpellsPanel;
 
       // First paint: currentIndex was resolved from the active character's kit
       // before the sprite was created (applyAnimation already painted it), and
@@ -2188,6 +2459,17 @@ export default function StudioClient() {
           }
         >
           Battle
+        </button>
+        <button
+          className="menu-bar-item"
+          onClick={(e) =>
+            e.currentTarget.classList.toggle(
+              "active",
+              !!toggleSpellsPanelRef.current?.(),
+            )
+          }
+        >
+          Spells
         </button>
         <a className="menu-bar-item" href="/studio/mock-battle">
           Mock Battle

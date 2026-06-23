@@ -47,6 +47,32 @@ const threeVsThree: ResolveRequest = {
   ],
 };
 
+// Same-row exercise for the melee rule: both melee, started ADJACENT in the same
+// row (r=0). A melee unit can't attack a same-row target, so it must reposition to
+// a different row before it can engage — exercising canEngage / selectEngageTarget
+// and the movement fallback. Asserts that path stays deterministic.
+const sameRowMelee: ResolveRequest = {
+  players: [{ characterId: "knight", stats: knightStats, position: { q: 0, r: 0 } }],
+  enemies: [{ characterId: "skeleton", stats: enemyStats, position: { q: 1, r: 0 } }],
+};
+
+// Spell path: a caster with a ready "attack" spell magic-strikes the nearest enemy
+// from range (any position, ignores defense), exercising the new cast/cooldown
+// branch + the spellcast event — must stay byte-identical across two runs.
+const withSpell: ResolveRequest = {
+  players: [
+    {
+      characterId: "knight",
+      stats: { ...knightStats, skills: [] },
+      position: { q: -1, r: 2 },
+      spells: [
+        { id: "fireball", power: 2, cooldown: 6, type: "attack", animationKey: "john-spell" },
+      ],
+    },
+  ],
+  enemies: [{ characterId: "skeleton", stats: enemyStats, position: { q: 1, r: -2 } }],
+};
+
 function run(label: string, req: ResolveRequest): void {
   const a = resolveBattle(req);
   const b = resolveBattle(req);
@@ -67,3 +93,5 @@ function run(label: string, req: ResolveRequest): void {
 
 run("1v1", oneVsOne);
 run("3v3", threeVsThree);
+run("same-row", sameRowMelee);
+run("spell", withSpell);

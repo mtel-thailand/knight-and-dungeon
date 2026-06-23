@@ -12,12 +12,55 @@ export type Team = "player" | "enemy";
 
 // Per-character combat stats. Source of truth = character_battle_stats (SQLite),
 // loaded as defaults into the party builder, editable, sent in the resolve payload.
+// Attack type gates targeting: a "melee" unit cannot attack a target sharing its
+// row (r); "ranged" has no such restriction. Orthogonal to `range`. Optional on
+// input — omitted/invalid defaults to melee (see DEFAULT_ATTACK_TYPE in buildUnit).
+export type AttackType = "melee" | "ranged";
+export const ATTACK_TYPES: readonly AttackType[] = ["melee", "ranged"] as const;
+export const DEFAULT_ATTACK_TYPE: AttackType = "melee";
+
+// ---- Spells (CMS-managed top-level entities; MAGIC attacks) ----
+// A Spell is a top-level configurable entity (like a character): an assigned
+// animation (a catalog key = the projectile art), a type (only "attack" now), a
+// power (damage = floor(caster.attack * power), IGNORES defense), and a cooldown
+// (seconds). Characters own a list of spell ids; magic fires any-position →
+// any-position (no range/row restriction).
+export type SpellType = "attack";
+export const SPELL_TYPES: readonly SpellType[] = ["attack"] as const;
+export const DEFAULT_SPELL_TYPE: SpellType = "attack";
+
+// CMS entity, persisted in `spells`, surfaced in GET /api/config as `spells`.
+export type SpellDef = {
+  id: string;
+  name: string;
+  animationKey: string; // an `animations` catalog key (projectile art)
+  type: SpellType;
+  power: number; // damage multiplier on caster.attack
+  cooldown: number; // seconds
+};
+
+// What travels to the PURE engine per member (the engine can't read the DB).
+export type SpellInput = {
+  id: string;
+  power: number;
+  cooldown: number;
+  type: SpellType;
+  animationKey: string;
+};
+
+export const SPELL_BOUNDS = {
+  power: { min: 0, max: 100 },
+  cooldown: { min: 0, max: 600 },
+} as const;
+export const MAX_SPELLS_PER_UNIT = 8;
+
 export type UnitStats = {
   hp: number;
   attack: number;
   defense: number;
   actionSpeed: number;
   range: number;
+  attackType?: AttackType; // default "melee"; melee cannot attack a same-row target
   skills: string[]; // owned skill ids, e.g. ["shield_bash"]; [] = no skill
 };
 
@@ -33,6 +76,8 @@ export type Unit = {
   actionSpeed: number;
   actionGauge: number;
   range: number;
+  attackType: AttackType; // resolved (defaulted) in buildUnit; never undefined here
+  spells: SpellInput[]; // resolved (defaulted []) in buildUnit; per-unit spell configs
   skills: string[]; // owned skill ids (optional per-character skill ownership)
   position: HexPosition;
   cooldowns: Record<string, number>;
@@ -52,7 +97,8 @@ export type Action =
   | { type: "wait"; sourceId: string }
   | { type: "move"; sourceId: string; targetPosition: HexPosition }
   | { type: "attack"; sourceId: string; targetId: string }
-  | { type: "skill"; sourceId: string; skillId: string; targetId: string };
+  | { type: "skill"; sourceId: string; skillId: string; targetId: string }
+  | { type: "spell"; sourceId: string; spellId: string; targetId: string };
 
 // "draw" added for symmetric-party timeout resolution (NOT auto-lose).
 export type BattleStatus = "setup" | "running" | "win" | "lose" | "draw";
@@ -81,6 +127,17 @@ export type BattleEvent =
       targetHp: number;
       push?: { from: HexPosition; to: HexPosition };
     }
+  | {
+      t: number;
+      kind: "spellcast";
+      sourceId: string;
+      targetId: string;
+      spellId: string;
+      from: HexPosition; // caster hex (projectile start)
+      to: HexPosition; // target hex (projectile end)
+      damage: number;
+      targetHp: number;
+    }
   | { t: number; kind: "death"; unitId: string }
   | { t: number; kind: "end"; result: "win" | "lose" | "draw" };
 
@@ -104,6 +161,7 @@ export type PartyMemberInput = {
   characterId: string;
   stats: UnitStats; // builder-supplied (DB defaults, editable); route MUST clamp/validate
   position: HexPosition; // deploy hex
+  spells?: SpellInput[]; // owned spell configs (optional; default []); route clamps/validates
 };
 
 export type ResolveRequest = {
