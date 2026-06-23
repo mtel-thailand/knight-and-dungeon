@@ -2,8 +2,10 @@
 // shared/`/play` location later.
 //
 // A presentational, slot-based portrait frame (9:19.5). Full-bleed on phones;
-// centered + letterboxed on desktop. Three stacked zones — top 30% / center
-// 40% / bottom 30%. `top`/`bottom` are reserved HUD placeholders (rendered
+// centered + letterboxed on desktop. Three stacked zones — a square (1:1)
+// `center` field (sized by aspect-ratio at full frame width), with the
+// top/bottom HUD bands splitting the remaining height equally (≈27% each at
+// this frame ratio). `top`/`bottom` are reserved HUD placeholders (rendered
 // faintly, intentionally empty for now); `center` is the gameplay field and
 // the visual focus. Styles are co-located in a <style> tag so the component
 // carries over verbatim with no external CSS dependency.
@@ -12,6 +14,10 @@ import type { ReactNode } from "react";
 type GameScreenShellProps = {
   top?: ReactNode;
   center: ReactNode;
+  /** Optional still-image backdrop for the (square) center field; also the video poster/fallback. */
+  centerBg?: string;
+  /** Optional looping video backdrop (plays over `centerBg`); muted + playsInline for mobile autoplay. */
+  centerVideo?: string;
   bottom?: ReactNode;
   className?: string;
 };
@@ -19,6 +25,8 @@ type GameScreenShellProps = {
 export default function GameScreenShell({
   top,
   center,
+  centerBg,
+  centerVideo,
   bottom,
   className,
 }: GameScreenShellProps) {
@@ -28,7 +36,42 @@ export default function GameScreenShell({
       <div className="gss-frame">
         <div className="gss-zone gss-zone-top">{top}</div>
         <div className="gss-center">
-          <div className="gss-center-field">{center}</div>
+          {/* Center field, layered back-to-front: still image (CSS bg) ->
+              looping video -> scrim -> gameplay (`center`) -> edge vignette
+              (::after). `centerBg` doubles as the video poster/fallback, so the
+              shell stays asset-agnostic and degrades gracefully; when neither bg
+              is set the stylesheet's radial-gradient shows through. */}
+          <div
+            className="gss-center-field"
+            style={
+              centerBg
+                ? {
+                    backgroundImage: `url("${centerBg}")`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    backgroundRepeat: "no-repeat",
+                  }
+                : undefined
+            }
+          >
+            {centerVideo ? (
+              <video
+                className="gss-center-video"
+                src={centerVideo}
+                poster={centerBg}
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+                ref={(el) => {
+                  if (el) el.muted = true; // ensure muted before autoplay (React attr quirk)
+                }}
+              />
+            ) : null}
+            {centerBg || centerVideo ? <div className="gss-center-scrim" /> : null}
+            <div className="gss-center-content">{center}</div>
+          </div>
         </div>
         <div className="gss-zone gss-zone-bottom">{bottom}</div>
       </div>
@@ -61,7 +104,7 @@ const GSS_CSS = `
   height: min(100cqh, 100cqw * 19.5 / 9);
   display: flex; flex-direction: column;
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 0;
   background:
     radial-gradient(130% 46% at 50% 40%, rgba(38,58,76,0.20), transparent 72%),
     linear-gradient(180deg, #0c0f15, #0a0c12 52%, #0c0f15);
@@ -78,7 +121,7 @@ const GSS_CSS = `
 
 /* Reserved HUD zones — recessed, calm, intentionally empty (future HUD). */
 .gss-zone {
-  position: relative; flex: 0 0 30%; min-height: 0;
+  position: relative; flex: 1 1 0; min-height: 0;
   background: linear-gradient(180deg, rgba(0,0,0,0.26), rgba(0,0,0,0.10));
 }
 .gss-zone-top {
@@ -89,27 +132,36 @@ const GSS_CSS = `
   box-shadow: inset 0 14px 26px -18px rgba(0,0,0,0.7);
   border-top: 1px solid rgba(255,255,255,0.035);
 }
-.gss-zone::after {
-  content: ""; position: absolute; inset: 12px; border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.025); pointer-events: none;
-}
+/* (zone inset frame removed — full-bleed sections, square corners) */
 
 /* Center — the combat field, the focal centerpiece. The inner field is a real,
    position:relative sized box so an absolutely-positioned child (e.g. a Pixi
    canvas host with inset:0) fills it and a renderer's resizeTo reads the band's
    true dimensions. Padding gives units/effects breathing room. */
 .gss-center {
-  position: relative; flex: 0 0 40%; min-height: 0;
-  display: flex; box-sizing: border-box; padding: 12px;
+  position: relative; flex: 0 0 auto; aspect-ratio: 1 / 1; min-height: 0;
+  display: flex; box-sizing: border-box; padding: 0;
 }
 .gss-center-field {
   position: relative; flex: 1 1 auto; min-width: 0; min-height: 0;
-  border-radius: 14px; overflow: hidden;
+  border-radius: 0; overflow: hidden; isolation: isolate;
   background: radial-gradient(78% 64% at 50% 50%, rgba(40,72,92,0.16), transparent 76%);
 }
+/* Center-field layers (back -> front): looping video, scrim, gameplay content.
+   The field's CSS background (still image / radial) sits behind all of these. */
+.gss-center-video {
+  position: absolute; inset: 0; z-index: 0;
+  width: 100%; height: 100%; object-fit: cover; object-position: center;
+  pointer-events: none;
+}
+.gss-center-scrim {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(180deg, rgba(5,7,13,0.20), rgba(5,7,13,0.40));
+}
+.gss-center-content { position: absolute; inset: 0; z-index: 2; }
 /* Soft vignette + faint inner ring framing the field, over the board edges. */
 .gss-center-field::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: 14px;
+  content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: 0;
   box-shadow:
     inset 0 0 42px 8px rgba(5,8,14,0.5),
     inset 0 0 0 1px rgba(120,200,230,0.07);

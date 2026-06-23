@@ -467,6 +467,10 @@ type StageProps = {
   // without tearing down the Pixi app.
   mapCfgRef: React.MutableRefObject<MapConfig>;
   applyMapRef: React.MutableRefObject<() => void>;
+  // Show-grid bridge: showGridRef seeds grid.visible on (re)build; gridVisibleRef
+  // is the effect's live setter the panel calls to toggle the hex floor.
+  showGridRef: React.MutableRefObject<boolean>;
+  gridVisibleRef: React.MutableRefObject<((v: boolean) => void) | null>;
   onReady: () => void;
   onEnd: (r: "win" | "lose" | "draw") => void;
 };
@@ -479,6 +483,8 @@ function BattleStage({
   redrawHealthBarsRef,
   mapCfgRef,
   applyMapRef,
+  showGridRef,
+  gridVisibleRef,
   onReady,
   onEnd,
 }: StageProps) {
@@ -798,15 +804,37 @@ function BattleStage({
           boardScale * Math.cos(rotYRad),
           boardScale * Math.cos(rotXRad),
         );
+        // Bottom-anchor the board to the center band: drop it so the front-most
+        // tile edge rests just inside the bottom border (the Pixi host fills
+        // .gss-center-field, so screen.height === that band's bottom), leaving
+        // the headroom above for the upright units instead of dead space below.
+        // The board's lowest point lies (|halfW·sinθ| + |halfH·cosθ|) below its
+        // pivot in board space (θ = the in-plane Z-rotation); the viewport's
+        // vertical zoom (boardScale·cos(pitch), matching scale.y above) converts
+        // that to screen px.
+        const halfW = (xX - nX) / 2;
+        const halfH = (xY - nY) / 2;
+        const bottomDrop =
+          (Math.abs(halfW * Math.sin(rotRad)) +
+            Math.abs(halfH * Math.cos(rotRad))) *
+          boardScale *
+          Math.cos(rotXRad);
+        const BOTTOM_INSET = 8; // so the inner ring/vignette doesn't clip the edge
         viewport.position.set(
           pixiApp.screen.width / 2,
-          pixiApp.screen.height / 2 + 14,
+          pixiApp.screen.height - BOTTOM_INSET - bottomDrop,
         );
       }
 
       // Iso hex floor — player row cool, enemy row warm, transit rows neutral.
+      // `grid` is a sibling of `unitsLayer` under `board`, so toggling its
+      // visibility hides ONLY the tiles — units/HP bars/damage numbers stay.
       const grid = new Graphics();
       board.addChild(grid);
+      grid.visible = showGridRef.current; // seed from the live toggle on (re)build
+      gridVisibleRef.current = (v: boolean) => {
+        grid.visible = v;
+      };
       function drawGrid() {
         const th = tileW * ratio;
         grid.clear();
@@ -1309,18 +1337,26 @@ function BattleStage({
             tasks.push(
               schedule(ids, async () => {
                 const sub: Promise<unknown>[] = [];
-                if (src && !src.dead) sub.push(doAttack(src, tgt, myId));
+                const attackDone =
+                  src && !src.dead ? doAttack(src, tgt, myId) : Promise.resolve();
+                sub.push(attackDone);
                 if (tgt) {
-                  spawnDamage(
-                    tgt,
-                    ev.damage,
-                    ev.kind === "skill" ? "skill" : "attack",
-                    myId,
-                  );
                   sub.push(updateHp(tgt, ev.targetHp, myId));
                   sub.push(flashHit(tgt, myId));
                   if (ev.kind === "skill" && ev.push)
                     sub.push(knockback(tgt, ev.push.from, ev.push.to, myId));
+                  // Damage number appears only AFTER the attacker's swing finishes
+                  // (impact), not during the wind-up. Fire-and-forget like before,
+                  // but gated on the live replay id so a restart/teardown cancels it.
+                  void attackDone.then(() => {
+                    if (destroyed || genId !== myId) return;
+                    spawnDamage(
+                      tgt,
+                      ev.damage,
+                      ev.kind === "skill" ? "skill" : "attack",
+                      myId,
+                    );
+                  });
                 }
                 await Promise.all(sub);
               }),
@@ -1420,6 +1456,7 @@ function BattleStage({
       controlsRef.current = null;
       redrawHealthBarsRef.current = () => {};
       applyMapRef.current = () => {};
+      gridVisibleRef.current = null;
       if (pixiApp) {
         try {
           pixiApp.destroy();
@@ -1549,11 +1586,25 @@ export default function MockBattleClient() {
   // Auto-rewatch: when ON, a finished replay loops back into the same battle.
   // In-memory only (not persisted) — a viewing preference for this round.
   const [autoRewatch, setAutoRewatch] = useState(false);
+  // Show-grid: hex tile floor visibility. Default ON is mock-battle-specific
+  // (the dev sandbox wants the board visible); a future /play port would default
+  // this OFF — not built here. In-memory only (not persisted).
+  const [showGrid, setShowGrid] = useState(true);
 
   const controlsRef = useRef<{ replay: () => void } | null>(null);
   // Bridge: BattleStage points this at its live HP-bar repaint; the Display
   // panel calls it so "Health bar" slider tweaks re-geometry bars immediately.
   const redrawHealthBarsRef = useRef<() => void>(() => {});
+  // Show-grid bridge (imperative, like the refs above). showGridRef lets a
+  // freshly-built battle seed grid.visible correctly; gridVisibleRef is the
+  // effect's live setter (BattleStage populates it, clears it on teardown).
+  // Both are threaded into <BattleStage> like the other *Ref props.
+  const showGridRef = useRef(showGrid);
+  const gridVisibleRef = useRef<((v: boolean) => void) | null>(null);
+  useEffect(() => {
+    showGridRef.current = showGrid;
+    gridVisibleRef.current?.(showGrid);
+  }, [showGrid]);
 
   // Display panel — live damage-number knobs. `dmgCfg` drives the inputs; the
   // ref mirrors it so the once-built spawnDamage closure reads fresh values
@@ -1958,6 +2009,8 @@ export default function MockBattleClient() {
                 canvas host (.mb-stage, absolute inset:0) fills .gss-center-field
                 so resizeTo reads the real band size and the board re-fits. */}
             <GameScreenShell
+              centerBg="/assets/dungeon-bg.png"
+              centerVideo="/assets/dungeon-bg.mp4"
               center={
                 config && result ? (
                   <BattleStage
@@ -1969,6 +2022,8 @@ export default function MockBattleClient() {
                     redrawHealthBarsRef={redrawHealthBarsRef}
                     mapCfgRef={mapCfgRef}
                     applyMapRef={applyMapRef}
+                    showGridRef={showGridRef}
+                    gridVisibleRef={gridVisibleRef}
                     onReady={onStageReady}
                     onEnd={onStageEnd}
                   />
@@ -1989,6 +2044,8 @@ export default function MockBattleClient() {
               onToggleTopDown={toggleTopDown}
               autoRewatch={autoRewatch}
               onAutoRewatchChange={setAutoRewatch}
+              showGrid={showGrid}
+              onShowGridChange={setShowGrid}
               onReset={resetDmgCfg}
             />
 
@@ -2236,6 +2293,8 @@ function DisplayConfigPanel({
   onToggleTopDown,
   autoRewatch,
   onAutoRewatchChange,
+  showGrid,
+  onShowGridChange,
   onReset,
 }: {
   open: boolean;
@@ -2248,6 +2307,8 @@ function DisplayConfigPanel({
   onToggleTopDown: () => void;
   autoRewatch: boolean;
   onAutoRewatchChange: (value: boolean) => void;
+  showGrid: boolean;
+  onShowGridChange: (value: boolean) => void;
   onReset: () => void;
 }) {
   return (
@@ -2287,6 +2348,16 @@ function DisplayConfigPanel({
                   >
                     Top-down
                   </button>
+                )}
+                {isBoard && (
+                  <label className="mb-ui-check">
+                    <input
+                      type="checkbox"
+                      checked={showGrid}
+                      onChange={(e) => onShowGridChange(e.target.checked)}
+                    />
+                    <span>Show grid</span>
+                  </label>
                 )}
                 {section.controls.map((c) => {
                   const value = isBoard
@@ -2454,7 +2525,7 @@ const CSS = `
 .mb-skill { display: flex; align-items: center; gap: 5px; font-size: 11px; color: rgba(255,255,255,0.6); cursor: pointer; }
 .mb-skill input { accent-color: #38e0c4; }
 .mb-ui-check {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 9px; margin-bottom: 14px;
   font-size: 12px; color: rgba(255,255,255,0.7); cursor: pointer;
 }
 .mb-ui-check input { accent-color: #38e0c4; width: 15px; height: 15px; cursor: pointer; }
