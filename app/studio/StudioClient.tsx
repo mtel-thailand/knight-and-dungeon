@@ -2222,12 +2222,13 @@ export default function StudioClient() {
       toggleBattlePanelRef.current = doToggleBattlePanel;
 
       // --- Spells manager panel (CMS: global spell defs) ---
-      // Spells are GLOBAL entities (like characters), so they get their own
-      // top-level panel — NOT scoped to a character. Each spell binds a name, an
-      // animationKey from the FULL catalog (projectile art), power and cooldown.
-      // Create/edit → POST /api/config/spell; delete → DELETE. Characters pick
-      // which spells they own in the Battle panel's Spells section. Mirrors the
-      // Battle Data panel's placement/treatment (reuses .battle-panel styles).
+      // Spells are a PARENT-LEVEL entity (same tier as characters), so this panel
+      // mirrors the character-management idiom: a selectable .char-list of spell
+      // rows + a bottom .char-new-form "Add spell", and the selected spell's
+      // config (name, animation, power, cooldown) shows in an editor area below —
+      // master-detail in one side panel. activeSpell mirrors activeCharacter.
+      // Create/edit → POST /api/config/spell; delete → DELETE. Per-character
+      // ownership stays in the Battle panel's Spells section.
       const spellsPanel = document.createElement("div");
       spellsPanel.className = "battle-panel";
 
@@ -2236,9 +2237,40 @@ export default function StudioClient() {
       spellsTitle.textContent = "Spells";
       spellsPanel.appendChild(spellsTitle);
 
-      const spellsContent = document.createElement("div");
-      spellsContent.className = "battle-content";
-      spellsPanel.appendChild(spellsContent);
+      // Master list — reuses the character list/row classes for visual parity.
+      const spellList = document.createElement("div");
+      spellList.className = "char-list spell-list";
+      spellsPanel.appendChild(spellList);
+
+      // Detail editor — reuses the battle-content treatment so makeBattleNumRow /
+      // makeBattleSaveBtn drop straight in.
+      const spellEditor = document.createElement("div");
+      spellEditor.className = "battle-content spell-editor";
+      spellsPanel.appendChild(spellEditor);
+
+      // Add form — pinned at the bottom, identical to the character panel.
+      const spellNewForm = document.createElement("div");
+      spellNewForm.className = "char-new-form";
+      const spellNewInput = document.createElement("input");
+      spellNewInput.type = "text";
+      spellNewInput.className = "char-new-input";
+      spellNewInput.placeholder = "Spell name";
+      const spellAddBtn = document.createElement("button");
+      spellAddBtn.className = "char-add-btn";
+      spellAddBtn.textContent = "Add";
+      spellNewForm.appendChild(spellNewInput);
+      spellNewForm.appendChild(spellAddBtn);
+      spellsPanel.appendChild(spellNewForm);
+
+      // Client-only selection state (mirrors activeCharacter; not persisted).
+      let activeSpell = spellsState[0]?.id ?? "";
+
+      function uniqueSpellId(base: string): string {
+        if (!spellsState.some((s) => s.id === base)) return base;
+        let n = 2;
+        while (spellsState.some((s) => s.id === `${base}-${n}`)) n++;
+        return `${base}-${n}`;
+      }
 
       // Animation <select> options = the full loaded catalog (spells are global,
       // so they are NOT scoped to a character's kit). A stored key that's no
@@ -2267,141 +2299,216 @@ export default function StudioClient() {
         sel.value = current;
       }
 
-      function renderSpellsPanel() {
-        spellsContent.innerHTML = "";
-
-        if (spellsState.length === 0) {
-          const empty = document.createElement("div");
-          empty.className = "battle-hint";
-          empty.textContent = "No spells yet. Add one below.";
-          spellsContent.appendChild(empty);
-        }
-
+      function renderSpellList() {
+        spellList.innerHTML = "";
         spellsState.forEach((spell) => {
-          const card = document.createElement("div");
-          card.className = "spell-card";
+          const row = document.createElement("div");
+          row.className =
+            "char-row" + (spell.id === activeSpell ? " active" : "");
 
-          // Head: name input + delete.
-          const head = document.createElement("div");
-          head.className = "spell-card-head";
-          const nameInput = document.createElement("input");
-          nameInput.type = "text";
-          nameInput.className = "spell-name-input";
-          nameInput.value = spell.name;
-          nameInput.placeholder = "Spell name";
-          nameInput.addEventListener("input", () => {
-            spell.name = nameInput.value;
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "char-row-name";
+          nameSpan.textContent = spell.name;
+
+          const rowActions = document.createElement("div");
+          rowActions.className = "char-row-actions";
+
+          const editBtn = document.createElement("button");
+          editBtn.className = "char-action-btn";
+          editBtn.textContent = "✎";
+          editBtn.title = "Rename";
+
+          const deleteBtn = document.createElement("button");
+          deleteBtn.className = "char-action-btn";
+          deleteBtn.textContent = "×";
+          deleteBtn.title = "Delete";
+
+          rowActions.appendChild(editBtn);
+          rowActions.appendChild(deleteBtn);
+          row.appendChild(nameSpan);
+          row.appendChild(rowActions);
+          spellList.appendChild(row);
+
+          row.addEventListener("click", (e) => {
+            if (rowActions.contains(e.target as Node)) return;
+            if (row.querySelector(".char-rename-input")) return;
+            if (spell.id !== activeSpell) selectSpell(spell.id);
           });
-          const delBtn = document.createElement("button");
-          delBtn.className = "spell-del-btn";
-          delBtn.textContent = "✕";
-          delBtn.title = "Delete spell";
-          delBtn.addEventListener("click", () => {
+
+          editBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const inp = document.createElement("input");
+            inp.type = "text";
+            inp.className = "char-rename-input";
+            inp.value = spell.name;
+            row.replaceChild(inp, nameSpan);
+            inp.focus();
+            inp.select();
+            let committed = false;
+            function commit() {
+              if (committed) return;
+              committed = true;
+              const newName = inp.value.trim();
+              if (newName && newName !== spell.name) {
+                spell.name = newName;
+                saveSpell(spell);
+              }
+              renderSpellList();
+              if (spell.id === activeSpell) renderSpellEditor();
+            }
+            inp.addEventListener("blur", commit);
+            inp.addEventListener("keydown", (ev) => {
+              if (ev.key === "Enter") commit();
+              if (ev.key === "Escape") {
+                committed = true;
+                renderSpellList();
+              }
+            });
+          });
+
+          deleteBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const idx = spellsState.findIndex((s) => s.id === spell.id);
+            if (idx === -1) return;
+            spellsState.splice(idx, 1);
             deleteSpell(spell.id);
-            const i = spellsState.findIndex((s) => s.id === spell.id);
-            if (i >= 0) spellsState.splice(i, 1);
             // Drop the deleted id from every character's ownership working copy.
             Object.keys(characterSpellsState).forEach((cid) => {
               characterSpellsState[cid] = (
                 characterSpellsState[cid] ?? []
               ).filter((sid) => sid !== spell.id);
             });
-            renderSpellsPanel();
+            if (activeSpell === spell.id)
+              activeSpell = spellsState[Math.max(0, idx - 1)]?.id ?? "";
+            renderSpellList();
+            renderSpellEditor();
           });
-          head.appendChild(nameInput);
-          head.appendChild(delBtn);
-          card.appendChild(head);
-
-          // Animation binding — from the full catalog.
-          const animRow = document.createElement("div");
-          animRow.className = "battle-row";
-          const animLbl = document.createElement("span");
-          animLbl.className = "battle-row-label";
-          animLbl.textContent = "Animation";
-          const animSel = document.createElement("select");
-          animSel.className = "battle-select";
-          fillSpellAnimSelect(animSel, spell.animationKey);
-          animSel.addEventListener("change", () => {
-            spell.animationKey = animSel.value;
-          });
-          animRow.appendChild(animLbl);
-          animRow.appendChild(animSel);
-          card.appendChild(animRow);
-
-          // Power + cooldown — reuse the battle number-row helper into the card.
-          makeBattleNumRow(
-            "Power",
-            spell.power,
-            SPELL_BOUNDS.power.min,
-            SPELL_BOUNDS.power.max,
-            0.1,
-            (v) => {
-              spell.power = v;
-            },
-            card,
-          );
-          makeBattleNumRow(
-            "Cooldown",
-            spell.cooldown,
-            SPELL_BOUNDS.cooldown.min,
-            SPELL_BOUNDS.cooldown.max,
-            0.5,
-            (v) => {
-              spell.cooldown = v;
-            },
-            card,
-          );
-
-          makeBattleSaveBtn("Save Spell", () => saveSpell(spell), card);
-
-          spellsContent.appendChild(card);
         });
-
-        // Add-spell form: name → slugify for the id (uniquified against existing).
-        const form = document.createElement("div");
-        form.className = "spell-add-form";
-        const addInput = document.createElement("input");
-        addInput.type = "text";
-        addInput.className = "char-new-input";
-        addInput.placeholder = "New spell name";
-        const addBtn = document.createElement("button");
-        addBtn.className = "char-add-btn";
-        addBtn.textContent = "Add spell";
-        function addSpell() {
-          const name = addInput.value.trim();
-          if (!name) return;
-          const base = slugify(name, "spell");
-          let id = base;
-          let n = 2;
-          while (spellsState.some((s) => s.id === id)) id = `${base}-${n++}`;
-          const spell: SpellDef = {
-            id,
-            name,
-            animationKey: animations[0]?.configKey ?? "",
-            type: DEFAULT_SPELL_TYPE,
-            power: 1,
-            cooldown: 0,
-          };
-          spellsState.push(spell);
-          saveSpell(spell);
-          addInput.value = "";
-          renderSpellsPanel();
-        }
-        addBtn.addEventListener("click", addSpell);
-        addInput.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") addSpell();
-        });
-        form.appendChild(addInput);
-        form.appendChild(addBtn);
-        spellsContent.appendChild(form);
       }
+
+      function selectSpell(id: string) {
+        activeSpell = id;
+        renderSpellList();
+        renderSpellEditor();
+      }
+
+      // Detail view: the selected spell's editable config (mirrors how selecting
+      // a character surfaces its config). Name is also editable inline via the
+      // row's ✎. Save → POST the whole spell; the list re-renders to sync names.
+      function renderSpellEditor() {
+        spellEditor.innerHTML = "";
+        const spell = spellsState.find((s) => s.id === activeSpell);
+        if (!spell) {
+          const empty = document.createElement("div");
+          empty.className = "battle-hint";
+          empty.textContent =
+            spellsState.length === 0
+              ? "No spells yet. Add one below."
+              : "Select a spell to edit.";
+          spellEditor.appendChild(empty);
+          return;
+        }
+
+        const nameRow = document.createElement("div");
+        nameRow.className = "battle-row";
+        const nameLbl = document.createElement("span");
+        nameLbl.className = "battle-row-label";
+        nameLbl.textContent = "Name";
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.className = "spell-name-input";
+        nameInput.value = spell.name;
+        nameInput.placeholder = "Spell name";
+        nameInput.addEventListener("input", () => {
+          spell.name = nameInput.value;
+          const activeName = spellList.querySelector(
+            ".char-row.active .char-row-name",
+          );
+          if (activeName) activeName.textContent = spell.name;
+        });
+        nameRow.appendChild(nameLbl);
+        nameRow.appendChild(nameInput);
+        spellEditor.appendChild(nameRow);
+
+        const animRow = document.createElement("div");
+        animRow.className = "battle-row";
+        const animLbl = document.createElement("span");
+        animLbl.className = "battle-row-label";
+        animLbl.textContent = "Animation";
+        const animSel = document.createElement("select");
+        animSel.className = "battle-select";
+        fillSpellAnimSelect(animSel, spell.animationKey);
+        animSel.addEventListener("change", () => {
+          spell.animationKey = animSel.value;
+        });
+        animRow.appendChild(animLbl);
+        animRow.appendChild(animSel);
+        spellEditor.appendChild(animRow);
+
+        makeBattleNumRow(
+          "Power",
+          spell.power,
+          SPELL_BOUNDS.power.min,
+          SPELL_BOUNDS.power.max,
+          0.1,
+          (v) => {
+            spell.power = v;
+          },
+          spellEditor,
+        );
+        makeBattleNumRow(
+          "Cooldown",
+          spell.cooldown,
+          SPELL_BOUNDS.cooldown.min,
+          SPELL_BOUNDS.cooldown.max,
+          0.5,
+          (v) => {
+            spell.cooldown = v;
+          },
+          spellEditor,
+        );
+
+        makeBattleSaveBtn(
+          "Save Spell",
+          () => {
+            saveSpell(spell);
+            renderSpellList();
+          },
+          spellEditor,
+        );
+      }
+
+      function addSpell() {
+        const name = spellNewInput.value.trim();
+        if (!name) return;
+        const id = uniqueSpellId(slugify(name, "spell"));
+        const spell: SpellDef = {
+          id,
+          name,
+          animationKey: animations[0]?.configKey ?? "",
+          type: DEFAULT_SPELL_TYPE,
+          power: 1,
+          cooldown: 0,
+        };
+        spellsState.push(spell);
+        saveSpell(spell);
+        spellNewInput.value = "";
+        selectSpell(id);
+      }
+      spellAddBtn.addEventListener("click", addSpell);
+      spellNewInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") addSpell();
+      });
 
       container.appendChild(spellsPanel);
 
       let spellsPanelOpen = false;
       function doToggleSpellsPanel(): boolean {
         spellsPanelOpen = !spellsPanelOpen;
-        if (spellsPanelOpen) renderSpellsPanel();
+        if (spellsPanelOpen) {
+          renderSpellList();
+          renderSpellEditor();
+        }
         spellsPanel.classList.toggle("open", spellsPanelOpen);
         return spellsPanelOpen;
       }
