@@ -21,7 +21,13 @@ import {
   DEFAULT_CHARACTER,
 } from "./studioConstants";
 import { STUDIO_CSS } from "./studioStyles";
-import { slugify, getHexRows, defaultCharConfig } from "./studioHelpers";
+import {
+  slugify,
+  getHexRowsFromCounts,
+  isoPos,
+  isoHex,
+  defaultCharConfig,
+} from "./studioHelpers";
 import type {
   AnimConfig,
   AnimationRow,
@@ -306,11 +312,10 @@ export default function StudioClient() {
         }
       }
 
-      // Hex grid — pointy-top hexagons, 2-3-2 layout centered on canvas
+      // Hex grid — pointy-top hexagons, 5-6-7-6-5 layout centered on canvas
       let tileOffset = { px: 0, py: 0 };
       let isoTileW = GRID.tileW;
       let isoTileHRatio = GRID.tileHRatio;
-      let gridRadius = GRID.radius;
       const hexGrid = new Graphics();
       const tilePosMap: { label: string; px: number; py: number }[] = [];
 
@@ -318,50 +323,25 @@ export default function StudioClient() {
         hexGrid.clear();
         const tW = isoTileW;
         const tH = isoTileW * isoTileHRatio;
-        const rowCols: number[][] = getHexRows(gridRadius);
+        const rowCols: number[][] = getHexRowsFromCounts(GRID.rows);
         const cR = (rowCols.length - 1) / 2;
 
-        rowCols.forEach((cols, ri) => {
-          const r = ri - cR;
-          cols.forEach((q) => {
-            const cx = ((q * 2 + r) * tW) / 2;
-            const cy = r * tH;
-            hexGrid.poly([
-              cx,
-              cy - tH / 2,
-              cx + tW / 2,
-              cy,
-              cx,
-              cy + tH / 2,
-              cx - tW / 2,
-              cy,
-            ]);
-            hexGrid.fill({ color: GRID.tileFill, alpha: 0.65 });
-            hexGrid.stroke({ color: GRID.tileStroke, width: 2, alpha: 0.9 });
-          });
-        });
-
-        rowCols.forEach((cols, ri) => {
-          const r = ri - cR;
-          cols.forEach((q) => {
-            const cx = ((q * 2 + r) * tW) / 2;
-            const cy = r * tH;
-            hexGrid.circle(cx, cy, 3);
-            hexGrid.fill({ color: GRID.dot, alpha: 0.9 });
-          });
-        });
-
-        hexGrid.circle(0, 0, 5);
-        hexGrid.fill({ color: GRID.dot, alpha: 1 });
-        hexGrid.stroke({ color: GRID.centerStroke, width: 1.5, alpha: 0.9 });
-
+        // Iso-hex floor matching the mock-battle board: 6-point honeycomb tiles
+        // (shared isoPos lattice + isoHex corners at 94% for the seam gap),
+        // neutral fill + faint cyan stroke. No tile/center dots.
         tilePosMap.length = 0;
         rowCols.forEach((cols, ri) => {
           const r = ri - cR;
           cols.forEach((q) => {
-            const px = ((q * 2 + r) * tW) / 2;
-            const py = r * tH;
-            tilePosMap.push({ label: `Tile ${tilePosMap.length + 1}`, px, py });
+            const { x, y } = isoPos(q, r, tW, tH);
+            hexGrid.poly(isoHex(x, y, tW * 0.94, tH * 0.94).flat());
+            hexGrid.fill({ color: GRID.tileFill, alpha: 0.55 });
+            hexGrid.stroke({ color: GRID.tileStroke, width: 1.5, alpha: 0.2 });
+            tilePosMap.push({
+              label: `Tile ${tilePosMap.length + 1}`,
+              px: x,
+              py: y,
+            });
           });
         });
       }
@@ -469,25 +449,6 @@ export default function StudioClient() {
       mapOverlay.appendChild(tWInp);
       mapOverlay.appendChild(tHLabel);
       mapOverlay.appendChild(tHInp);
-      const gSLabel = document.createElement("span");
-      gSLabel.className = "map-overlay-label";
-      gSLabel.textContent = "Size:";
-      const gSInp = document.createElement("input");
-      gSInp.type = "number";
-      gSInp.className = "map-overlay-input";
-      gSInp.min = "1";
-      gSInp.max = "5";
-      gSInp.step = "1";
-      gSInp.value = String(gridRadius);
-      gSInp.addEventListener("input", () => {
-        const v = parseInt(gSInp.value);
-        if (!isNaN(v) && v >= 1 && v <= 5) {
-          gridRadius = v;
-          refreshIsoGrid();
-        }
-      });
-      mapOverlay.appendChild(gSLabel);
-      mapOverlay.appendChild(gSInp);
       canvasWrapper.appendChild(mapOverlay);
 
       // Empty-state hint shown on the canvas when there is no active character.

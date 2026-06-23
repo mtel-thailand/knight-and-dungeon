@@ -144,11 +144,15 @@ export const STAT_BOUNDS = {
   range: { min: 1, max: 20 },
 } as const;
 
+// [5,6,7,6,5] hexagon arena in centered axial coords (r in {-2..2}, q centered
+// per row) — the same shape the studio preview renders. Outer rows hold the
+// deploy zones: enemyRow = -2 (top, 5 cells), playerRow = +2 (bottom, 5 cells).
+// maxPerSide must stay <= min(rowCounts[0], rowCounts[last]).
 export const BOARD = {
-  cols: 5,
-  rows: 4,
-  playerRow: 3,
-  enemyRow: 0,
+  rowCounts: [5, 6, 7, 6, 5],
+  rows: 5,
+  playerRow: 2,
+  enemyRow: -2,
   maxPerSide: 5,
 } as const;
 
@@ -163,3 +167,51 @@ export const BATTLE_TICK = 0.25; // fixed timestep (deterministic)
 // vertical iso squash; scale = overall board scale.
 export type MapConfig = { tileWidth: number; tileHeightRatio: number; scale: number; rotation: number; rotationX: number; rotationY: number };
 export const DEFAULT_MAP_CONFIG: MapConfig = { tileWidth: 72, tileHeightRatio: 0.5, scale: 1, rotation: 0, rotationX: 0, rotationY: 0 };
+
+// ---- Display config (damage-number + health-bar persistence) ----
+
+// mock-battle Display panel: damage-number AND health-bar render settings,
+// persisted as a single row (id=1) in damage_config — stored as a JSON blob
+// (NOT columns), so new knobs need no migration. size/offset/height/rise are
+// multipliers of the live tile size; stroke is px; durationMs is the float
+// lifetime. barWidth is × tile width; barHeight / barGap are px.
+export type DamageConfig = {
+  sizeNormal: number; // attack number font size            (× tile size)
+  sizeSkill: number; // skill number font size              (× tile size)
+  height: number; // gap above the unit's head              (× tile size)
+  offsetX: number; // horizontal nudge, + = toward facing   (× tile size)
+  offsetY: number; // vertical nudge, + = up                (× tile size)
+  rise: number; // float-up distance                        (× tile size)
+  stroke: number; // outline width (px)
+  durationMs: number; // float lifetime (ms)
+  barWidth: number; // HP bar width                         (× tile width)
+  barHeight: number; // HP bar height (px)
+  barGap: number; // HP bar gap above the unit's head (px)
+};
+export const DEFAULT_DAMAGE_CONFIG: DamageConfig = {
+  sizeNormal: 0.27,
+  sizeSkill: 0.34,
+  height: 0.2,
+  offsetX: 0,
+  offsetY: 0,
+  rise: 0.45,
+  stroke: 4,
+  durationMs: 520,
+  barWidth: 0.95,
+  barHeight: 6,
+  barGap: 12,
+};
+// [min, max] clamp bounds (mirror the panel sliders) — used by the writer route.
+export const DAMAGE_BOUNDS: Record<keyof DamageConfig, [number, number]> = {
+  sizeNormal: [0.1, 0.8],
+  sizeSkill: [0.1, 0.9],
+  height: [0, 1],
+  offsetX: [-1, 1],
+  offsetY: [-1, 1],
+  rise: [0, 1.2],
+  stroke: [0, 12],
+  durationMs: [200, 1500],
+  barWidth: [0.2, 2],
+  barHeight: [2, 20],
+  barGap: [-40, 60],
+};

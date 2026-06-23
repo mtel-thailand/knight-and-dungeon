@@ -5,6 +5,7 @@ import type {
   BattleEvent,
   BattleEventRole,
   CharacterRoleMap,
+  DamageConfig as DamageCfg,
   HexPosition,
   MapConfig,
   PartyMemberInput,
@@ -13,7 +14,14 @@ import type {
   Team,
   UnitStats,
 } from "@/lib/battle/types";
-import { BATTLE_TICK, BOARD, MAX_BATTLE_TIME, STAT_BOUNDS } from "@/lib/battle/types";
+import { BATTLE_TICK, BOARD, DEFAULT_DAMAGE_CONFIG, MAX_BATTLE_TIME, STAT_BOUNDS } from "@/lib/battle/types";
+import { isoPos, isoHex, getHexRowsFromCounts } from "../studioHelpers";
+import { Jersey_25 } from "next/font/google";
+
+// Pixel display font for the floating damage numbers (self-hosted via next/font,
+// so no external request). next/font hashes the family name — always reference it
+// through `dmgFont.style.fontFamily`, never a literal "Jersey 25".
+const dmgFont = Jersey_25({ weight: "400", subsets: ["latin"], display: "swap" });
 
 /* ------------------------------------------------------------------ *
  * Constants & small helpers
@@ -31,10 +39,14 @@ const DEATH_MS = 260;
 const KNOCKBACK_MS = 200;
 const HPBAR_MS = 180;
 const INTER_BEAT_MS = 80; // breathing room between equal-`t` beats
-const DMG_MS = 520; // floating damage number (decorative, fire-and-forget)
 
 /** 2:1 isometric tile ratio (tile height = tile width * ISO_RATIO), matching the studio iso grid. */
 const ISO_RATIO = 0.5;
+
+// The floating damage-number config (DamageCfg) + its defaults now live in the
+// shared contract (lib/battle/types.ts) so the server can persist them; the
+// live values are read from `dmgCfgRef` by `spawnDamage` at spawn time (the
+// size/offset fields are × the live tile size — see DEFAULT_DAMAGE_CONFIG).
 
 /** Map-config defaults (mirror the server's GET /api/config fallback). */
 const DEFAULT_MAP: MapConfig = {
@@ -98,41 +110,28 @@ function hpColor(r: number): number {
     : lerpColor(0xe05a5a, 0xe0c84a, r * 2);
 }
 
-/**
- * TRUE isometric (2.5D) projection of a board cell (q = col, r = row) to screen.
- * Rows recede front->back: the player row (r = playerRow) reads "near" (lower on
- * screen) and the enemy row "far". `tw` = tile width, `th` = tile height (the
- * vertical squash that gives the iso look — driven by the live H ratio).
- */
-function isoPos(q: number, r: number, tw: number, th: number) {
-  return { x: (q - r) * (tw / 2), y: (q + r) * (th / 2) };
-}
-
-/**
- * Isometric hexagon tile corners around center (cx,cy): flat top & bottom edges,
- * pointed left & right, squashed to height `th` for the 2.5D look.
- */
-function isoHex(
-  cx: number,
-  cy: number,
-  tw: number,
-  th: number,
-): Array<[number, number]> {
-  return [
-    [cx - tw / 4, cy - th / 2],
-    [cx + tw / 4, cy - th / 2],
-    [cx + tw / 2, cy],
-    [cx + tw / 4, cy + th / 2],
-    [cx - tw / 4, cy + th / 2],
-    [cx - tw / 2, cy],
-  ];
-}
+// Board deploy geometry, derived once from the shared [5,6,7,6,5] shape. A builder
+// `slot` is a 0..maxPerSide-1 INDEX into a side's deploy row, NOT a raw q — the
+// hexagon's two outer rows sit at different q-ranges, so each side maps its slots
+// through its own row here.
+const BOARD_ROWS = getHexRowsFromCounts([...BOARD.rowCounts]);
+const DEPLOY_QS: Record<Team, number[]> = {
+  player: BOARD_ROWS[BOARD_ROWS.length - 1],
+  enemy: BOARD_ROWS[0],
+};
+const deployHex = (team: Team, slot: number): HexPosition => ({
+  q: DEPLOY_QS[team][slot],
+  r: team === "player" ? BOARD.playerRow : BOARD.enemyRow,
+});
 
 /** Every deploy/transit hex on the board, used when a snapshot omits `hexes`. */
 function genHexes(): HexPosition[] {
+  const cR = (BOARD_ROWS.length - 1) / 2;
   const out: HexPosition[] = [];
-  for (let r = 0; r < BOARD.rows; r++)
-    for (let q = 0; q < BOARD.cols; q++) out.push({ q, r });
+  BOARD_ROWS.forEach((cols, ri) => {
+    const r = ri - cR;
+    cols.forEach((q) => out.push({ q, r }));
+  });
   return out;
 }
 
@@ -168,6 +167,7 @@ type BootstrapConfig = {
   battleStats?: Record<string, UnitStats>;
   roleMaps?: Record<string, CharacterRoleMap>;
   mapConfig?: MapConfig;
+  damageConfig?: DamageCfg;
 };
 
 function normalizeConfig(data: any): BootstrapConfig {
@@ -181,6 +181,7 @@ function normalizeConfig(data: any): BootstrapConfig {
     battleStats: data?.battleStats ?? {},
     roleMaps: data?.roleMaps ?? {},
     mapConfig: data?.mapConfig ?? { ...DEFAULT_MAP },
+    damageConfig: data?.damageConfig ?? { ...DEFAULT_DAMAGE_CONFIG },
   };
 }
 
@@ -343,8 +344,8 @@ function mockResolve(req: ResolveRequest): ResolveResult {
           const backRow = target.team === "enemy" ? BOARD.enemyRow : BOARD.playerRow;
           target.r = clamp(
             target.r + Math.sign(backRow - target.r || 1),
-            0,
-            BOARD.rows - 1,
+            BOARD.enemyRow,
+            BOARD.playerRow,
           );
           const to = { q: target.q, r: target.r };
           const moved = from.q !== to.q || from.r !== to.r;
@@ -440,6 +441,8 @@ type SpriteUnit = {
   absScale: number;
   baseTint: number;
   dispH: number;
+  barBg: any;
+  accent: any;
   hpFill: any;
   maxHp: number;
   hp: number;
@@ -452,11 +455,25 @@ type StageProps = {
   result: ResolveResult;
   config: BootstrapConfig;
   controlsRef: React.MutableRefObject<{ replay: () => void } | null>;
+  // Live damage-number config. A stable ref (never in the effect deps) so the
+  // panel can retune numbers mid-battle without tearing down the Pixi app.
+  dmgCfgRef: React.MutableRefObject<DamageCfg>;
+  // Repaint hook: the effect points this at its redrawHealthBars() so the panel
+  // can re-geometry the HP bars live (same stable-ref pattern as dmgCfgRef).
+  redrawHealthBarsRef: React.MutableRefObject<() => void>;
   onReady: () => void;
   onEnd: (r: "win" | "lose" | "draw") => void;
 };
 
-function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps) {
+function BattleStage({
+  result,
+  config,
+  controlsRef,
+  dmgCfgRef,
+  redrawHealthBarsRef,
+  onReady,
+  onEnd,
+}: StageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -487,6 +504,19 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
         return;
       }
       wrapper.appendChild(pixiApp.canvas);
+
+      // Load the pixel display font before any Pixi text is rasterized — canvas
+      // text doesn't trigger the CSS @font-face fetch, so without this the first
+      // damage numbers would flash in the fallback font (and never re-render).
+      try {
+        await document.fonts.load(`400 32px ${dmgFont.style.fontFamily}`);
+      } catch {
+        /* fall back to the default font */
+      }
+      if (destroyed) {
+        pixiApp.destroy();
+        return;
+      }
 
       // ---- Frames: build once, share Texture[] across every unit (122-159) ----
       const catalog: any[] = config.animations ?? [];
@@ -668,7 +698,7 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
           ? result.initialState.hexes
           : genHexes();
       // ---- Board layout: isometric HEX tiles, live-configurable W / H / Scale ----
-      // The logical grid is FIXED 5x4 (engine BOARD + deploy rows). W reshapes tile
+      // The logical grid is the fixed [5,6,7,6,5] hex arena (engine BOARD + deploy rows). W reshapes tile
       // width, H the vertical squash; Scale zooms the whole board. Sprite sizing is
       // pinned to the initial fit (TW0) so units stay readable while tweaking.
       const fitW = (() => {
@@ -717,7 +747,7 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
       // that snapshot exactly. While it's on we suppress scheduleSave() so the
       // user's tuned iso config on the server is never clobbered — a page reload
       // returns to that saved iso config.
-      const TOPDOWN_RATIO = 0.866; // ≈ √3/2 → tiles read as regular hexagons
+      const TOPDOWN_RATIO = 1; // pointy-top reads as a clean hexagon when height ≈ width (H is capped at 1)
       let topDown = false;
       let isoSnapshot: {
         ratio: number;
@@ -829,6 +859,36 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
       }
       centerBoard();
 
+      // Paint/repaint a unit's three HP-bar graphics (bg, team accent, fill)
+      // from the LIVE display config (dmgCfgRef). Defaults reproduce the
+      // original bar exactly: barW = TW0*0.95, barH = 6, barY = -dispH - 12.
+      // Called at build time and by redrawHealthBars() on a panel retune.
+      function drawHealthBar(su: SpriteUnit) {
+        const cfg = dmgCfgRef.current;
+        const barW = TW0 * cfg.barWidth;
+        const barH = cfg.barHeight;
+        const barY = -su.dispH - cfg.barGap;
+        su.barBg.clear();
+        su.barBg
+          .roundRect(-barW / 2 - 1, barY - 1, barW + 2, barH + 2, 3)
+          .fill({ color: 0x05070b, alpha: 0.7 });
+        su.accent.clear();
+        su.accent
+          .roundRect(-barW / 2 - 1, barY - 1, barW + 2, 2, 2)
+          .fill({ color: su.team === "player" ? 0x38e0c4 : 0xff5d73, alpha: 0.8 });
+        const ratio = Math.max(0.0001, Math.min(1, su.hp / su.maxHp));
+        su.hpFill.clear();
+        su.hpFill.roundRect(0, barY, barW, barH, 2).fill({ color: 0xffffff });
+        su.hpFill.position.x = -barW / 2;
+        su.hpFill.scale.x = ratio;
+        su.hpFill.tint = hpColor(ratio);
+        su.hpFill.visible = !su.dead;
+      }
+      // Re-geometry every unit's HP bar (driven by the panel "Health bar" sliders).
+      function redrawHealthBars() {
+        for (const id in sprites) drawHealthBar(sprites[id]);
+      }
+
       // ---- Build one unit visual per snapshot unit ----
 
       for (const u of result.initialState.units) {
@@ -884,24 +944,9 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
         const absScale = Math.abs(body.scale.x) || 1;
         body.scale.x = absScale * (u.team === "enemy" ? -1 : 1); // face inward
 
-        const barW = TW0 * 0.95;
-        const barH = 6;
-        const barY = -dispH - 12;
         const barBg = new Graphics();
-        barBg
-          .roundRect(-barW / 2 - 1, barY - 1, barW + 2, barH + 2, 3)
-          .fill({ color: 0x05070b, alpha: 0.7 });
         const accent = new Graphics();
-        accent
-          .roundRect(-barW / 2 - 1, barY - 1, barW + 2, 2, 2)
-          .fill({
-            color: u.team === "player" ? 0x38e0c4 : 0xff5d73,
-            alpha: 0.8,
-          });
         const hpFill = new Graphics();
-        hpFill.roundRect(0, barY, barW, barH, 2).fill({ color: 0xffffff });
-        hpFill.position.x = -barW / 2;
-        hpFill.tint = hpColor(1);
 
         const node = new Container();
         node.addChild(body, barBg, accent, hpFill);
@@ -920,6 +965,8 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
           absScale,
           baseTint,
           dispH,
+          barBg,
+          accent,
           hpFill,
           maxHp: u.maxHp,
           hp: u.hp,
@@ -927,12 +974,19 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
           r: u.position.r,
           dead: false,
         };
+        // Paint the bar from the live config now that the SpriteUnit exists
+        // (defaults reproduce the original geometry exactly).
+        drawHealthBar(sprites[u.id]);
         initialById[u.id] = { q: u.position.q, r: u.position.r };
       }
 
       // Apply the loaded view config to the freshly-built units (scale to the live
       // tile + counter-rotate upright).
       relayout();
+
+      // Expose the HP-bar repaint to the panel (stable-ref bridge, like dmgCfgRef);
+      // reset to a no-op in cleanup so a stale closure can't paint a dead app.
+      redrawHealthBarsRef.current = redrawHealthBars;
 
       // On-canvas controls (mirror the studio's map-overlay): live tile Width,
       // Height ratio, Scale and view Rotation — persisted to the DB on change.
@@ -1182,30 +1236,37 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
         kind: "attack" | "skill",
         myId: number,
       ) {
-        const k = tileW / TW0;
+        // Read the live config at spawn time — the panel mutates this ref, so
+        // each new number reflects the latest knobs without an effect rebuild.
+        const cfg = dmgCfgRef.current;
         const t = new Text({
           text: kind === "skill" ? `${amount}!` : `${amount}`,
           style: {
-            fontFamily: "system-ui, sans-serif",
-            fontSize: (kind === "skill" ? 0.34 : 0.27) * tileW,
-            fontWeight: "800",
+            fontFamily: dmgFont.style.fontFamily,
+            fontSize: (kind === "skill" ? cfg.sizeSkill : cfg.sizeNormal) * TW0,
+            fontWeight: "400",
             fill: kind === "skill" ? 0xffd36b : 0xffffff,
-            stroke: { color: 0x05070b, width: 4 },
+            stroke: { color: 0x05070b, width: cfg.stroke },
           },
         });
         t.anchor.set(0.5);
-        t.rotation = -rotRad; // stay readable when the board view is rotated
-        const baseY = su.node.y - su.dispH * k - tileW * 0.18;
-        t.position.set(su.node.x, baseY);
-        board.addChild(t);
+        // Parent the number to the unit node (like the HP bar) so it tracks the
+        // char as it moves/knocks back. node already counter-rotates + unsquashes
+        // + scales to the live tile each frame (relayout), so the text needs no
+        // manual billboard transform — fontSize/offsets are in TW0 (local) units.
+        // Offset X flips with the body so + always reads as "toward the facing".
+        const facing = su.team === "enemy" ? -1 : 1;
+        const baseX = TW0 * cfg.offsetX * facing;
+        const baseY = -su.dispH - TW0 * cfg.height - TW0 * cfg.offsetY;
+        t.position.set(baseX, baseY);
+        su.node.addChild(t);
         tween(
-          DMG_MS,
+          cfg.durationMs,
           (p) => {
-            t.position.y = baseY - tileW * 0.4 * easeOutCubic(p);
+            t.position.y = baseY - TW0 * cfg.rise * easeOutCubic(p);
             t.alpha = 1 - p * p;
             const sc = 1 + 0.18 * easeOutCubic(p);
-            // counter the board tilt/zoom so the number stays upright & unsquashed
-            t.scale.set(sc / Math.cos(rotYRad), sc / Math.cos(rotXRad));
+            t.scale.set(sc, sc);
           },
           myId,
         ).then(() => {
@@ -1495,6 +1556,7 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
         }
       }
       controlsRef.current = null;
+      redrawHealthBarsRef.current = () => {};
       if (pixiApp) {
         try {
           pixiApp.destroy();
@@ -1519,7 +1581,7 @@ function BattleStage({ result, config, controlsRef, onReady, onEnd }: StageProps
 type BuildUnit = {
   uid: string;
   characterId: string;
-  slot: number; // q (0..cols-1)
+  slot: number; // deploy index 0..maxPerSide-1 (NOT a raw q)
   stats: UnitStats;
 };
 
@@ -1549,7 +1611,9 @@ function BoardPreview({
     maxY = Math.max(maxY, p.y + PVH / 2);
   }
   const occupied = (team: Team, q: number) =>
-    (team === "player" ? players : enemies).find((u) => u.slot === q);
+    (team === "player" ? players : enemies).find(
+      (u) => DEPLOY_QS[team][u.slot] === q,
+    );
 
   return (
     <svg
@@ -1621,6 +1685,55 @@ export default function MockBattleClient() {
   const [fightError, setFightError] = useState<string | null>(null);
 
   const controlsRef = useRef<{ replay: () => void } | null>(null);
+  // Bridge: BattleStage points this at its live HP-bar repaint; the Display
+  // panel calls it so "Health bar" slider tweaks re-geometry bars immediately.
+  const redrawHealthBarsRef = useRef<() => void>(() => {});
+
+  // Display panel — live damage-number knobs. `dmgCfg` drives the inputs; the
+  // ref mirrors it so the once-built spawnDamage closure reads fresh values
+  // without the canvas effect re-running. Setting state re-renders, and the
+  // assignment below repoints the ref — no extra effect, no Pixi rebuild.
+  const [uiPanelOpen, setUiPanelOpen] = useState(false);
+  const [dmgCfg, setDmgCfg] = useState<DamageCfg>(() => ({ ...DEFAULT_DAMAGE_CONFIG }));
+  const dmgCfgRef = useRef<DamageCfg>(dmgCfg);
+  dmgCfgRef.current = dmgCfg;
+  // Persist damage-number tweaks server-side, debounced (~400ms trailing) so a
+  // slider drag doesn't spam the writer route. The timer reads the live ref at
+  // fire time (mirrors the map-config save), so the latest value is always sent.
+  const dmgSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleDmgSave = useCallback(() => {
+    if (dmgSaveTimer.current) clearTimeout(dmgSaveTimer.current);
+    dmgSaveTimer.current = setTimeout(() => {
+      fetch("/api/config/damage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dmgCfgRef.current),
+      }).catch(() => {});
+    }, 400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (dmgSaveTimer.current) clearTimeout(dmgSaveTimer.current);
+    },
+    [],
+  );
+  const setDmgField = useCallback(
+    (key: keyof DamageCfg, value: number) => {
+      setDmgCfg((prev) => ({ ...prev, [key]: value }));
+      // Keep the live ref fresh synchronously (render reassigns it too) so the
+      // immediate HP-bar repaint below reads the new value, not last render's.
+      dmgCfgRef.current = { ...dmgCfgRef.current, [key]: value };
+      scheduleDmgSave();
+      redrawHealthBarsRef.current(); // live HP-bar geometry (no-op for number knobs)
+    },
+    [scheduleDmgSave],
+  );
+  const resetDmgCfg = useCallback(() => {
+    setDmgCfg({ ...DEFAULT_DAMAGE_CONFIG });
+    dmgCfgRef.current = { ...DEFAULT_DAMAGE_CONFIG };
+    scheduleDmgSave();
+    redrawHealthBarsRef.current();
+  }, [scheduleDmgSave]);
 
   const statsFor = useCallback(
     (cfg: BootstrapConfig, id: string): UnitStats =>
@@ -1640,12 +1753,16 @@ export default function MockBattleClient() {
       }
       if (cancelled) return;
       setConfig(cfg);
+      // Hydrate the live damage-number knobs from the persisted config (dmgCfg
+      // was created with defaults before this fetch resolved). Uses setDmgCfg
+      // directly — NOT setDmgField — so loading never triggers a re-save.
+      setDmgCfg({ ...DEFAULT_DAMAGE_CONFIG, ...(cfg.damageConfig ?? {}) });
       // Seed a default matchup from the playable roster — first character vs the
       // next distinct one — so "Start battle" works immediately and stays correct
       // for any roster (no hardcoded ids).
       const seedRoster = buildRoster(cfg);
       if (seedRoster.length > 0) {
-        const mid = Math.floor(BOARD.cols / 2);
+        const mid = Math.floor(BOARD.maxPerSide / 2);
         const playerChar = seedRoster[0];
         const enemyChar =
           seedRoster.find((c) => c.id !== playerChar.id) ?? seedRoster[0];
@@ -1687,9 +1804,9 @@ export default function MockBattleClient() {
   };
 
   function nextFreeSlot(list: BuildUnit[]): number {
-    for (let q = 0; q < BOARD.cols; q++)
-      if (!list.some((u) => u.slot === q)) return q;
-    return list.length % BOARD.cols;
+    for (let i = 0; i < BOARD.maxPerSide; i++)
+      if (!list.some((u) => u.slot === i)) return i;
+    return list.length % BOARD.maxPerSide;
   }
 
   function addUnit(team: Team, charId: string) {
@@ -1747,15 +1864,15 @@ export default function MockBattleClient() {
   async function startFight() {
     if (!config || players.length === 0 || enemies.length === 0) return;
     const toInput =
-      (row: number) =>
+      (team: Team) =>
       (u: BuildUnit): PartyMemberInput => ({
         characterId: u.characterId,
         stats: clampStats(u.stats),
-        position: { q: u.slot, r: row },
+        position: deployHex(team, u.slot),
       });
     const req: ResolveRequest = {
-      players: players.map(toInput(BOARD.playerRow)),
-      enemies: enemies.map(toInput(BOARD.enemyRow)),
+      players: players.map(toInput("player")),
+      enemies: enemies.map(toInput("enemy")),
     };
     setPhase("resolving");
     setOutcome(null);
@@ -1888,10 +2005,20 @@ export default function MockBattleClient() {
                 result={result}
                 config={config}
                 controlsRef={controlsRef}
+                dmgCfgRef={dmgCfgRef}
+                redrawHealthBarsRef={redrawHealthBarsRef}
                 onReady={onStageReady}
                 onEnd={onStageEnd}
               />
             )}
+
+            <DisplayConfigPanel
+              open={uiPanelOpen}
+              onToggle={() => setUiPanelOpen((v) => !v)}
+              dmgCfg={dmgCfg}
+              onDmgChange={setDmgField}
+              onReset={resetDmgCfg}
+            />
 
             <button className="mb-back-btn" onClick={backToBuilder}>
               ← Edit parties
@@ -2022,7 +2149,7 @@ function PartyColumn({
 
             <div className="mb-slot-row">
               <span className="mb-slot-label">Hex</span>
-              {Array.from({ length: BOARD.cols }).map((_, q) => (
+              {Array.from({ length: BOARD.maxPerSide }).map((_, q) => (
                 <button
                   key={q}
                   className={`mb-slot-pill ${u.slot === q ? "on" : ""}`}
@@ -2064,6 +2191,118 @@ function PartyColumn({
         ))}
       </div>
     </section>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Display config panel — a right-side slide-in drawer of live "look"
+ * knobs (floating damage numbers + health bar). Data-driven: add a
+ * group by pushing to UI_SECTIONS; each control targets one DamageCfg
+ * field. Edits route through onDmgChange -> state + the spawn-time ref
+ * (+ a live HP-bar repaint), so tweaks retune mid-battle with no Pixi
+ * rebuild.
+ * ------------------------------------------------------------------ */
+
+type DmgControl = {
+  key: keyof DamageCfg;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  suffix?: string;
+  digits?: number; // fixed decimals in the readout (omit -> show as integer)
+};
+
+const UI_SECTIONS: { title: string; controls: DmgControl[] }[] = [
+  {
+    title: "Damage numbers",
+    controls: [
+      { key: "sizeNormal", label: "Damage size", min: 0.1, max: 0.8, step: 0.01, digits: 2 },
+      { key: "sizeSkill", label: "Skill size", min: 0.1, max: 0.9, step: 0.01, digits: 2 },
+      { key: "height", label: "Height", min: 0, max: 1, step: 0.02, digits: 2 },
+      { key: "offsetX", label: "Offset X", min: -1, max: 1, step: 0.02, digits: 2 },
+      { key: "offsetY", label: "Offset Y", min: -1, max: 1, step: 0.02, digits: 2 },
+      { key: "rise", label: "Rise", min: 0, max: 1.2, step: 0.02, digits: 2 },
+      { key: "stroke", label: "Stroke", min: 0, max: 12, step: 1, suffix: "px" },
+      { key: "durationMs", label: "Float time", min: 200, max: 1500, step: 20, suffix: "ms" },
+    ],
+  },
+  {
+    title: "Health bar",
+    controls: [
+      { key: "barWidth", label: "Bar width", min: 0.2, max: 2, step: 0.05, digits: 2 },
+      { key: "barHeight", label: "Bar height", min: 2, max: 20, step: 1, suffix: "px" },
+      { key: "barGap", label: "Bar gap", min: -40, max: 60, step: 1, suffix: "px" },
+    ],
+  },
+];
+
+function DisplayConfigPanel({
+  open,
+  onToggle,
+  dmgCfg,
+  onDmgChange,
+  onReset,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  dmgCfg: DamageCfg;
+  onDmgChange: (key: keyof DamageCfg, value: number) => void;
+  onReset: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className={`mb-ui-toggle ${open ? "open" : ""}`}
+        onClick={onToggle}
+        aria-pressed={open}
+        aria-label="Display settings"
+        title="Display settings"
+      >
+        UI
+      </button>
+
+      <aside className={`mb-ui-panel ${open ? "open" : ""}`} aria-hidden={!open}>
+        <div className="mb-ui-head">
+          <span className="mb-ui-title">Display</span>
+          <button type="button" className="mb-ui-reset" onClick={onReset}>
+            Reset
+          </button>
+        </div>
+
+        <div className="mb-ui-scroll">
+          {UI_SECTIONS.map((section) => (
+            <div key={section.title} className="mb-ui-section">
+              <div className="mb-ui-section-title">{section.title}</div>
+              {section.controls.map((c) => {
+                const value = dmgCfg[c.key];
+                return (
+                  <div key={c.key} className="mb-ui-row">
+                    <div className="mb-ui-row-head">
+                      <span className="mb-ui-label">{c.label}</span>
+                      <span className="mb-ui-value">
+                        {c.digits != null ? value.toFixed(c.digits) : value}
+                        {c.suffix ?? ""}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      className="mb-ui-slider"
+                      min={c.min}
+                      max={c.max}
+                      step={c.step}
+                      value={value}
+                      onChange={(e) => onDmgChange(c.key, Number(e.target.value))}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -2241,6 +2480,81 @@ const CSS = `
   background: rgba(224,176,74,0.14); border: 1px solid rgba(224,176,74,0.4);
   color: #f1d79a; font-size: 11px; padding: 6px 12px; border-radius: 20px;
   letter-spacing: 0.02em;
+}
+
+/* ---- Display / UI config drawer (right-side, slide-in) ---- */
+.mb-ui-toggle {
+  position: absolute; top: 50%; right: 0; transform: translateY(-50%);
+  width: 30px; height: 58px; z-index: 9; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(15,20,30,0.85); border: 1px solid rgba(255,255,255,0.14);
+  border-right: none; border-radius: 8px 0 0 8px;
+  color: rgba(255,255,255,0.55); cursor: pointer;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+  writing-mode: vertical-rl; text-orientation: mixed;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  outline: none; user-select: none;
+  transition: color 0.14s, background 0.14s, border-color 0.14s,
+    right 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.mb-ui-toggle:hover { color: #fff; background: rgba(35,42,56,0.92); border-color: rgba(255,255,255,0.3); }
+.mb-ui-toggle.open { right: 290px; color: #fff; }
+
+.mb-ui-panel {
+  position: absolute; top: 0; right: 0; width: 290px; height: 100%; z-index: 9;
+  display: flex; flex-direction: column; box-sizing: border-box; padding: 22px 20px;
+  background: rgba(13,16,22,0.9); border-left: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+}
+.mb-ui-panel.open { transform: translateX(0); }
+.mb-ui-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; padding-bottom: 12px; flex-shrink: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.mb-ui-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: rgba(255,255,255,0.32);
+}
+.mb-ui-reset {
+  background: none; border: none; cursor: pointer; padding: 2px 4px; outline: none;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(255,255,255,0.3); transition: color 0.12s;
+}
+.mb-ui-reset:hover { color: rgba(255,255,255,0.75); }
+.mb-ui-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; margin: 0 -20px; padding: 0 20px; }
+.mb-ui-scroll::-webkit-scrollbar { width: 4px; }
+.mb-ui-scroll::-webkit-scrollbar-track { background: transparent; }
+.mb-ui-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.mb-ui-section { margin-bottom: 24px; }
+.mb-ui-section-title {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(255,255,255,0.4); margin-bottom: 14px;
+}
+.mb-ui-row { margin-bottom: 15px; }
+.mb-ui-row-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+.mb-ui-label { font-size: 11px; color: rgba(255,255,255,0.55); letter-spacing: 0.02em; }
+.mb-ui-value {
+  font-size: 11px; color: rgba(255,255,255,0.78);
+  font-variant-numeric: tabular-nums; font-family: 'SF Mono','Fira Code',monospace;
+}
+.mb-ui-slider {
+  width: 100%; height: 4px; border-radius: 3px; outline: none; cursor: pointer;
+  -webkit-appearance: none; appearance: none; background: rgba(255,255,255,0.12);
+  transition: background 0.12s;
+}
+.mb-ui-slider:hover { background: rgba(255,255,255,0.18); }
+.mb-ui-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #38e0c4; border: 2px solid #0a0a0f; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.45);
+}
+.mb-ui-slider::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #38e0c4; border: 2px solid #0a0a0f; cursor: pointer;
 }
 
 /* ---- Result ---- */

@@ -56,7 +56,7 @@ Import these shapes; never redefine them.
   `ResolveResult{result,initialState,events}`; `BattleSnapshot{hexes,units}`.
 - CMS: `BattleEventRole = idle|move|attack|hit|death`, `CharacterRoleMap = Partial<Record<role,string>>`.
 - Constants: `STAT_BOUNDS` (hp 1–100000, attack/defense 0–100000, **actionSpeed 1–1000** anti-hang
-  cap, range 1–20); `BOARD` (cols 5, rows 4, playerRow 3, enemyRow 0, maxPerSide 5);
+  cap, range 1–20); `BOARD` (`rowCounts` [5,6,7,6,5] centered-axial hexagon, playerRow +2, enemyRow −2, maxPerSide 5);
   `BATTLE_TICK=0.25`, `MAX_BATTLE_TIME=60`.
 - **`MapConfig` (6 fields)** `{tileWidth, tileHeightRatio, scale, rotation, rotationX, rotationY}`;
   `DEFAULT_MAP_CONFIG = {72, 0.5, 1, 0, 0, 0}`.
@@ -65,8 +65,9 @@ Import these shapes; never redefine them.
 
 ## Engine — `lib/battle/{engine,hex}.ts` (pure)
 
-**`hex.ts`** — axial-hex helpers. `VALID_HEXES` is the full 5×4 rectangular grid (row-major,
-stable order). `hexDistance` (cube form), `getNeighbors`, `isValidHex`, `isOccupied` (living units
+**`hex.ts`** — axial-hex helpers. `VALID_HEXES` is the full [5,6,7,6,5] hexagon arena in centered
+axial coords (r∈{−2..2}, q centered per row — matches the studio preview; only this generator +
+`BOARD.rowCounts` encode the board shape), row-major (stable order). `hexDistance` (cube form), `getNeighbors`, `isValidHex`, `isOccupied` (living units
 only — dead free their hex), `getNextHexToward` (neighbors → in-bounds + unoccupied → min-distance,
 tie-break `r` then `q`, else stay), `getPushTarget` / `tryPushUnit` (Shield Bash knockback).
 
@@ -97,7 +98,7 @@ ids, total tie-breaks, integer floored damage, and no `Date`/`Math.random`. `lib
 
 - **`POST /api/battle/resolve`** (`app/api/battle/resolve/route.ts`, nodejs / force-dynamic) —
   validates + clamps every stat to `STAT_BOUNDS` (the `actionSpeed` cap closes a `while`-loop hang
-  vector), validates deploy hexes (integer, in `VALID_HEXES`, **player row 3 / enemy row 0**, no
+  vector), validates deploy hexes (integer, in `VALID_HEXES`, **player row +2 / enemy row −2**, no
   duplicate hex), rejects empty/over-cap parties (400 with a message), canonicalizes unit order
   (sort r→q) → `resolveBattle`. *Stats-in-payload is a sandbox convenience; switch to id-lookup for
   a real ladder/economy.*
@@ -151,7 +152,7 @@ does **not** prune the battle tables — the seeder's `pruneBattleData` handles 
 
 **Builder** — fetches `GET /api/config`; the selectable roster = characters that have `battleStats`
 (currently `john` + `john-copy`); seeds a default John-vs-Red-John matchup. You add fighters
-(≤5/side), place them on deploy hexes (player row 3 / enemy row 0), edit per-unit stats, toggle
+(≤5/side), place them on deploy hexes (player row +2 / enemy row −2), edit per-unit stats, toggle
 Shield Bash, and hit **Fight** → `requestResolve` POSTs a `ResolveRequest`. (`requestResolve` falls
 back to a deterministic local `mockResolve` on network/5xx, and surfaces 4xx validation errors
 inline.)

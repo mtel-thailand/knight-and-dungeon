@@ -1,12 +1,13 @@
 import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
-import { DEFAULT_MAP_CONFIG } from "@/lib/battle/types";
+import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG } from "@/lib/battle/types";
 import type {
   UnitStats,
   CharacterRoleMap,
   BattleEventRole,
   MapConfig,
+  DamageConfig,
 } from "@/lib/battle/types";
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -66,6 +67,10 @@ function createDb(): Database.Database {
       tile_height_ratio REAL,
       scale             REAL,
       rotation          REAL
+    );
+    CREATE TABLE IF NOT EXISTS damage_config (
+      id   INTEGER PRIMARY KEY CHECK (id = 1),
+      data TEXT NOT NULL
     );
   `);
   // Migration: battle_map_config predates rotation_x / rotation_y. CREATE TABLE
@@ -496,4 +501,36 @@ export function saveMapConfig(cfg: MapConfig): void {
       rotation_x: cfg.rotationX,
       rotation_y: cfg.rotationY,
     });
+}
+
+// ---------------------------------------------------------------------------
+// Damage-number config (/studio/mock-battle) — a single-row (id=1) table that
+// stores the floating combat-text layout as a JSON blob (NOT columns), so new
+// knobs need no migration. Read via GET /api/config (damageConfig) and written
+// through POST /api/config/damage; falls back to (and merges over)
+// DEFAULT_DAMAGE_CONFIG so missing/extra keys are tolerated.
+// ---------------------------------------------------------------------------
+
+/** The persisted damage-number config, merged over DEFAULT_DAMAGE_CONFIG. */
+export function getDamageConfig(): DamageConfig {
+  const row = getDb()
+    .prepare("SELECT data FROM damage_config WHERE id = 1")
+    .get() as { data: string } | undefined;
+  if (!row) return DEFAULT_DAMAGE_CONFIG;
+  try {
+    const parsed = JSON.parse(row.data) as Partial<DamageConfig>;
+    return { ...DEFAULT_DAMAGE_CONFIG, ...parsed };
+  } catch {
+    return DEFAULT_DAMAGE_CONFIG;
+  }
+}
+
+/** Idempotent upsert of the single damage-number config row (id=1). */
+export function saveDamageConfig(cfg: DamageConfig): void {
+  getDb()
+    .prepare(
+      `INSERT INTO damage_config (id, data) VALUES (1, @data)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+    )
+    .run({ data: JSON.stringify(cfg) });
 }

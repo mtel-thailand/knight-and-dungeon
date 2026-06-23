@@ -27,21 +27,23 @@ const enemyStats: UnitStats = {
   skills: [],
 };
 
+// Positions are in the centered axial frame: players on playerRow (r=2),
+// enemies on enemyRow (r=-2). Must be valid hexes or pathing degrades.
 const oneVsOne: ResolveRequest = {
-  players: [{ characterId: "knight", stats: knightStats, position: { q: 2, r: 3 } }],
-  enemies: [{ characterId: "skeleton", stats: enemyStats, position: { q: 2, r: 0 } }],
+  players: [{ characterId: "knight", stats: knightStats, position: { q: -1, r: 2 } }],
+  enemies: [{ characterId: "skeleton", stats: enemyStats, position: { q: 1, r: -2 } }],
 };
 
 const threeVsThree: ResolveRequest = {
   players: [
-    { characterId: "knight", stats: knightStats, position: { q: 1, r: 3 } },
-    { characterId: "knight", stats: knightStats, position: { q: 2, r: 3 } },
-    { characterId: "john", stats: { ...knightStats, skills: [] }, position: { q: 3, r: 3 } },
+    { characterId: "knight", stats: knightStats, position: { q: -2, r: 2 } },
+    { characterId: "knight", stats: knightStats, position: { q: -1, r: 2 } },
+    { characterId: "john", stats: { ...knightStats, skills: [] }, position: { q: 0, r: 2 } },
   ],
   enemies: [
-    { characterId: "skeleton", stats: enemyStats, position: { q: 1, r: 0 } },
-    { characterId: "skeleton", stats: enemyStats, position: { q: 2, r: 0 } },
-    { characterId: "skeleton", stats: enemyStats, position: { q: 3, r: 0 } },
+    { characterId: "skeleton", stats: enemyStats, position: { q: 0, r: -2 } },
+    { characterId: "skeleton", stats: enemyStats, position: { q: 1, r: -2 } },
+    { characterId: "skeleton", stats: enemyStats, position: { q: 2, r: -2 } },
   ],
 };
 

@@ -15,15 +15,16 @@ export const PREVIEW_TICK_MS = 16;
 export const PANEL_W = "20vw";
 export const DUAL_PANEL_W = "40vw";
 
-/** Hex-grid defaults and colors. */
+/**
+ * Hex-grid layout + palette. `rows` = tile count per board row (top to bottom).
+ * Colors match the mock-battle board so the preview reads as the same surface.
+ */
 export const GRID = {
   tileW: 120,
   tileHRatio: 0.5,
-  radius: 1,
-  tileFill: 0x1a2a3a,
-  tileStroke: 0x4a9aba,
-  dot: 0xff2222,
-  centerStroke: 0xffffff,
+  rows: [5, 6, 7, 6, 5],
+  tileFill: 0x1a2030,
+  tileStroke: 0x6fb7d6,
 };
 
 /** Offline fallback character used only when the API is unreachable. */

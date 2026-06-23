@@ -69,7 +69,7 @@ seeded for `john` + `john-copy` by `data/seed-battle.ts`.
 
 ## `StudioClient.tsx` is imperative, not React
 
-One ~2240-line `'use client'` component whose `useEffect` builds the PixiJS canvas **and** all side
+One ~2225-line `'use client'` component whose `useEffect` builds the PixiJS canvas **and** all side
 panels via raw `document.createElement` + an injected `<style>` tag. React only provides the outer
 shell (`.menu-bar`, styled in `app/globals.css` — global, not injected) + a container `ref`. Edit
 the imperative DOM code.
@@ -78,7 +78,8 @@ Pure, non-stateful pieces live in sibling modules (import from these; don't re-i
 (FPS, `PANEL_W`/`DUAL_PANEL_W`, `GRID`, `DEFAULT_CHARACTER`), **`studioStyles.ts`** (the `STUDIO_CSS`
 string injected as the `<style>` tag — it interpolates `PANEL_W`/`DUAL_PANEL_W`), **`studioTypes.ts`**
 (`AnimConfig`/`AnimationRow`/`CatalogEntry`/`Action`/`ServerConfig`/`CharacterSeed`/`BootstrapPayload`/…),
-and **`studioHelpers.ts`** (`slugify`, `getHexRows`, `defaultCharConfig`). Pixi types come in via
+and **`studioHelpers.ts`** (`slugify`, `getHexRowsFromCounts`, the shared `isoPos`/`isoHex` board
+geometry, `defaultCharConfig`). Pixi types come in via
 `import type { Application as PixiApplication, Texture as PixiTexture }` (erased at runtime — keeps
 Pixi out of module/server scope; the runtime values still come from `await import('pixi.js')`).
 
@@ -95,6 +96,11 @@ Pixi out of module/server scope; the runtime values still come from `await impor
   switch-animation, switch-character, and preview-restore all route through it, so first paint and
   post-switch never diverge. The active animation index is resolved from `resolveCharAnimKeys`
   (kit-aware, incl. blob-only kits like `john-copy`).
+- The board is a fixed **5-6-7-6-5** pointy-top hex (`getHexRowsFromCounts(GRID.rows)`); tiles render
+  through the **shared `isoPos`/`isoHex`** (`studioHelpers.ts`, also imported by
+  `mock-battle/MockBattleClient.tsx`) with `GRID.tileFill`/`tileStroke` matching it, so the studio
+  preview and the mock-battle board read as the same surface. The old radius-based "Size" overlay
+  control was removed (the `W`/`H` tile-size inputs remain).
 - Canvas wrapper is positioned `left: 40vw; right: 20vw` to clear the side panels.
 
 ## Mock-Battle feature (`/studio/mock-battle`) — built
@@ -105,7 +111,11 @@ configurable isometric hexagon board. **Full architecture doc: `MOCK_BATTLE.md`.
 `MOCK_BATTLE_TASKS.md`; engine spec: `~/Downloads/README_AFK_Hex_Battle_Knight_MVP_v3.md`.
 
 - **Frozen contract:** `lib/battle/types.ts` (import from here; don't redefine) — incl. `MapConfig`
-  (6 fields: tileWidth, tileHeightRatio, scale, rotation, rotationX, rotationY), `STAT_BOUNDS`, `BOARD`.
+  (6 fields: tileWidth, tileHeightRatio, scale, rotation, rotationX, rotationY), `STAT_BOUNDS`, and
+  `BOARD` — now a **`[5,6,7,6,5]` centered-axial hexagon arena** (`rowCounts`, `playerRow +2`,
+  `enemyRow −2`, `maxPerSide 5`; was a 5×4 rectangle). The board shape lives ONLY in `BOARD.rowCounts`
+  + the `VALID_HEXES` generator in `hex.ts` (the hex math is shape-agnostic), mirroring
+  `getHexRowsFromCounts` so the battle board and studio preview are the same surface.
 - **Pure engine:** `lib/battle/{engine,hex}.ts` (**no** React/Pixi/DB/`next`, no `Date`/`Math.random`;
   deterministic — `lib/battle/sanity.ts` proves byte-identical replays). Party-vs-party; win/lose/**draw**.
 - **Endpoints:** `POST /api/battle/resolve` (validate/clamp/canonicalize → `resolveBattle`);

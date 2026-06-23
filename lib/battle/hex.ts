@@ -7,17 +7,23 @@
 import type { HexPosition, Unit } from "./types";
 import { BOARD } from "./types";
 
-// The fixed battlefield: a BOARD.cols x BOARD.rows axial board, built row-major
-// (r outer, q inner) so VALID_HEXES order matches the v3 reference layout and is
-// stable for the snapshot. Row 0 = enemy back row, row (rows-1) = player row.
+// The fixed battlefield: a [5,6,7,6,5] hexagon arena in centered axial coords
+// (r in {-2..2}, q centered per row — the same shape/coords the studio preview
+// renders), built row-major (r outer, q inner) so VALID_HEXES order is stable for
+// the snapshot. Row -2 = enemy back row, row +2 = player row. The hex math below
+// is shape-agnostic, so this generator + BOARD.rowCounts are the ONLY places the
+// board shape is encoded (mirrors getHexRowsFromCounts in studioHelpers).
 export const VALID_HEXES: HexPosition[] = (() => {
-  const hexes: HexPosition[] = [];
-  for (let r = 0; r < BOARD.rows; r++) {
-    for (let q = 0; q < BOARD.cols; q++) {
-      hexes.push({ q, r });
-    }
+  const counts = BOARD.rowCounts;
+  const cR = (counts.length - 1) / 2;
+  const out: HexPosition[] = [];
+  for (let ri = 0; ri < counts.length; ri++) {
+    const r = ri - cR;
+    const n = counts[ri];
+    const qStart = (-(n - 1) - r) / 2;
+    for (let i = 0; i < n; i++) out.push({ q: qStart + i, r });
   }
-  return hexes;
+  return out;
 })();
 
 // Six axial neighbor directions (visual orientation is a render concern).

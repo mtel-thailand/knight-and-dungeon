@@ -13,19 +13,57 @@ export function slugify(name: string, fallback = "character"): string {
 }
 
 /**
- * Axial-coordinate columns for each row of a pointy-top hexagon of the given
- * radius (a hex "ring" board), centered on (0,0).
+ * Axial-coordinate columns for an iso board defined by an explicit per-row tile
+ * count (e.g. [5, 6, 7, 6, 5]). Each row is centered on q=0 for the shared
+ * projection `cx = (q * 2 + r) * tileW / 2`, so alternating even/odd row counts
+ * fall naturally into the pointy-top hex "brick" offset. Neighbouring counts
+ * should differ by ±1 (matching their row-offset parity) so q lands on-lattice.
  */
-export function getHexRows(radius: number): number[][] {
-  const rows: number[][] = [];
-  for (let r = -radius; r <= radius; r++) {
-    const qMin = Math.max(-radius, -radius - r);
-    const qMax = Math.min(radius, radius - r);
+export function getHexRowsFromCounts(counts: number[]): number[][] {
+  const cR = (counts.length - 1) / 2;
+  return counts.map((n, ri) => {
+    const r = ri - cR;
+    const qStart = (-(n - 1) - r) / 2;
     const cols: number[] = [];
-    for (let q = qMin; q <= qMax; q++) cols.push(q);
-    rows.push(cols);
-  }
-  return rows;
+    for (let i = 0; i < n; i++) cols.push(qStart + i);
+    return cols;
+  });
+}
+
+/**
+ * Pointy-top axial-hex → screen projection of a board cell (q = col, r = row):
+ * columns sit `tw` apart, each row is `3/4·th` lower and offset half a tile, so
+ * cells interlock as a honeycomb. Shared by the studio preview board and the
+ * mock-battle board so the two stay geometrically identical.
+ */
+export function isoPos(
+  q: number,
+  r: number,
+  tw: number,
+  th: number,
+): { x: number; y: number } {
+  return { x: (2 * q + r) * (tw / 2), y: r * ((th * 3) / 4) };
+}
+
+/**
+ * Pointy-top hexagon corners around (cx, cy): vertices at top & bottom, vertical
+ * edges left & right. Width `tw`, height `th` (the iso vertical squash). Tiles
+ * edge-to-edge with the `isoPos` lattice for any tw:th ratio.
+ */
+export function isoHex(
+  cx: number,
+  cy: number,
+  tw: number,
+  th: number,
+): Array<[number, number]> {
+  return [
+    [cx, cy - th / 2],
+    [cx + tw / 2, cy - th / 4],
+    [cx + tw / 2, cy + th / 4],
+    [cx, cy + th / 2],
+    [cx - tw / 2, cy + th / 4],
+    [cx - tw / 2, cy - th / 4],
+  ];
 }
 
 /** A fresh, identity per-character transform. */
