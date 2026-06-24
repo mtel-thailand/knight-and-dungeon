@@ -401,8 +401,8 @@ function buildUnit(input: PartyMemberInput, team: Team): Unit {
     id: "",
     team,
     characterId: input.characterId,
-    hp: s.hp,
-    maxHp: s.hp,
+    hp: input.currentHp === undefined ? s.hp : Math.max(1, Math.min(s.hp, input.currentHp)),
+    maxHp: s.hp, // never shrink maxHp — HP bars + 0-death checks compare against full hp
     attack: s.attack,
     defense: s.defense,
     actionSpeed: s.actionSpeed,
@@ -448,9 +448,16 @@ export function resolveBattle(req: ResolveRequest): ResolveResult {
     updateBattle(battle, BATTLE_TICK); // MAX_BATTLE_TIME guarantees termination
   }
 
+  // Closing board AFTER the sim (same shape as initialState) — lets the campaign
+  // runner carry survivor HP across waves. snapshotInitial is a pure read of
+  // battle.units; it emits no events and allocates no ids, so it cannot perturb
+  // determinism (a field-absent request still produces byte-identical events).
+  const finalState = snapshotInitial(battle);
+
   return {
     result: battle.status as "win" | "lose" | "draw",
     initialState,
+    finalState,
     events: battle.events,
   };
 }

@@ -117,12 +117,21 @@ function sanitizeMember(raw: unknown): PartyMemberInput | string {
       ? s.attackType
       : DEFAULT_ATTACK_TYPE;
 
+  // Optional starting-HP override (campaign wave carryover): clamp to [1, hp].
+  // Absent/invalid ⇒ omitted entirely, so buildUnit defaults to full hp and a
+  // non-campaign request stays byte-identical (the engine branches on `=== undefined`).
+  const currentHp =
+    typeof m.currentHp === "number" && Number.isFinite(m.currentHp)
+      ? clamp(m.currentHp, 1, hp)
+      : undefined;
+
   const stats: UnitStats = { hp, attack, defense, actionSpeed, range, skills, attackType };
   return {
     characterId: m.characterId,
     stats,
     position,
     spells: sanitizeSpells(m.spells),
+    ...(currentHp !== undefined ? { currentHp } : {}),
   };
 }
 

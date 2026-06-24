@@ -206,6 +206,7 @@ export type PartyMemberInput = {
   stats: UnitStats; // builder-supplied (DB defaults, editable); route MUST clamp/validate
   position: HexPosition; // deploy hex
   spells?: SpellInput[]; // owned spell configs (optional; default []); route clamps/validates
+  currentHp?: number; // optional starting-HP override (campaign wave carryover), clamped [1,stats.hp]; ABSENT ⇒ buildUnit defaults to stats.hp (byte-identical to pre-campaign requests)
 };
 
 export type ResolveRequest = {
@@ -216,6 +217,7 @@ export type ResolveRequest = {
 export type ResolveResult = {
   result: "win" | "lose" | "draw";
   initialState: BattleSnapshot;
+  finalState?: BattleSnapshot; // closing board after the sim (survivor HP for campaign wave carryover); resolveBattle always emits it, the client mock-resolve path may omit it
   events: BattleEvent[];
 };
 
