@@ -297,19 +297,19 @@ export default function SpellEditPage() {
         points: isoHex(p.x, p.y, tileW * 0.94, tileH * 0.94),
       };
     });
-    const startLocal = isoPos(PREVIEW_SWEEP_ROW[0], PREVIEW_SWEEP_R, tileW, tileH);
-    const endLocal = isoPos(
+    const casterLocal = isoPos(PREVIEW_SWEEP_ROW[0], PREVIEW_SWEEP_R, tileW, tileH);
+    const targetLocal = isoPos(
       PREVIEW_SWEEP_ROW[PREVIEW_SWEEP_ROW.length - 1],
       PREVIEW_SWEEP_R,
       tileW,
       tileH,
     );
-    const start = project(startLocal);
-    const end = project(endLocal);
+    const casterPos = project(casterLocal);
+    const targetPos = project(targetLocal);
     const shiftX = offX;
     const shiftY = -offY;
-    const lineStart = { x: start.x + shiftX, y: start.y + shiftY };
-    const lineEnd = { x: end.x + shiftX, y: end.y + shiftY };
+    const lineStart = { x: casterPos.x + shiftX, y: casterPos.y + shiftY };
+    const lineEnd = { x: targetPos.x + shiftX, y: targetPos.y + shiftY };
     const travelAngle =
       Math.atan2(lineEnd.y - lineStart.y, lineEnd.x - lineStart.x) + rotOffRad;
     const boardScaleFactor =
@@ -317,6 +317,15 @@ export default function SpellEditPage() {
     const spriteScaleX = boardScaleFactor / Math.cos(rotYRad);
     const spriteScaleY = boardScaleFactor / Math.cos(rotXRad);
     const spriteFlip = scale < 0 ? -1 : 1;
+    const tileScreenW = tileW * viewScaleX;
+    const tileScreenH = tileH * viewScaleY;
+    const unitH = Math.max(36, tileScreenH * 1.55);
+    const unitW = Math.max(20, tileScreenW * 0.68);
+    const unitBodyW = unitW * 0.74;
+    const unitBodyH = unitH * 0.82;
+    const unitHeadR = Math.max(5, unitW * 0.24);
+    const shadowRX = unitW * 0.34;
+    const shadowRY = unitW * 0.1;
 
     const dpr = window.devicePixelRatio || 1;
     cv.width = Math.max(1, Math.round(previewSide * dpr));
@@ -325,6 +334,82 @@ export default function SpellEditPage() {
     const ctx = cv.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const drawMockUnit = (p: { x: number; y: number }, team: "player" | "enemy", facing: 1 | -1) => {
+      const bodyTop = -unitBodyH * 0.78;
+      const headY = bodyTop - unitHeadR * 0.08;
+      const fillTop = team === "player" ? "rgba(104,255,238,0.98)" : "rgba(255,170,181,0.98)";
+      const fillBottom = team === "player" ? "rgba(22,58,74,0.98)" : "rgba(70,32,46,0.98)";
+      const outline = team === "player" ? "rgba(160,255,246,0.24)" : "rgba(255,184,194,0.24)";
+      const sideGlow = team === "player" ? "rgba(56,224,196,0.26)" : "rgba(255,93,115,0.26)";
+      const visorX = facing > 0 ? unitHeadR * 0.26 : -unitHeadR * 0.26;
+      const tabX = facing > 0 ? unitBodyW * 0.12 : -unitBodyW * 0.24;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.fillStyle = "rgba(0,0,0,0.28)";
+      ctx.beginPath();
+      ctx.ellipse(0, 6, shadowRX, shadowRY, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      const bodyGrad = ctx.createLinearGradient(0, bodyTop, 0, bodyTop + unitBodyH);
+      bodyGrad.addColorStop(0, fillTop);
+      bodyGrad.addColorStop(1, fillBottom);
+      ctx.fillStyle = bodyGrad;
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = Math.max(1, unitW * 0.04);
+      ctx.beginPath();
+      ctx.roundRect(-unitBodyW / 2, bodyTop, unitBodyW, unitBodyH, unitBodyW * 0.42);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = sideGlow;
+      ctx.beginPath();
+      ctx.roundRect(tabX, bodyTop + unitBodyH * 0.12, unitBodyW * 0.2, unitBodyH * 0.28, unitBodyW * 0.1);
+      ctx.fill();
+
+      const headGrad = ctx.createLinearGradient(0, headY - unitHeadR, 0, headY + unitHeadR);
+      headGrad.addColorStop(0, fillTop);
+      headGrad.addColorStop(1, fillBottom);
+      ctx.fillStyle = headGrad;
+      ctx.strokeStyle = outline;
+      ctx.lineWidth = Math.max(1, unitW * 0.03);
+      ctx.beginPath();
+      ctx.arc(0, headY, unitHeadR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(6,8,12,0.48)";
+      ctx.beginPath();
+      ctx.roundRect(visorX - unitHeadR * 0.08, headY - unitHeadR * 0.18, unitHeadR * 0.16, unitHeadR * 0.34, 999);
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.lineWidth = Math.max(1, unitW * 0.02);
+      ctx.beginPath();
+      ctx.moveTo(-unitBodyW * 0.16, bodyTop + unitBodyH * 0.2);
+      ctx.lineTo(unitBodyW * 0.16, bodyTop + unitBodyH * 0.2);
+      ctx.stroke();
+
+      ctx.restore();
+    };
+
+    const drawImpact = (p: { x: number; y: number }, pulse: number) => {
+      if (pulse <= 0) return;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = "rgba(255,93,115,0.34)";
+      ctx.lineWidth = Math.max(1.5, unitW * 0.05);
+      ctx.beginPath();
+      ctx.ellipse(0, -unitH * 0.08, unitW * 0.5, unitH * 0.22, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.beginPath();
+      ctx.arc(0, -unitH * 0.08, unitHeadR * 1.05, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
 
     const FLIGHT_MS = duration * 1000; // one pass — the spell's Flight (s), in ms
     const GAP_MS = 220; // brief pause (impact) before the flight repeats
@@ -367,31 +452,36 @@ export default function SpellEditPage() {
     const render = (t: number) => {
       ctx.clearRect(0, 0, previewSide, previewSide);
       drawBoard();
-      if (t >= FLIGHT_MS) return; // gap between passes
-      const e = easeInOutQuad(t / FLIGHT_MS);
-      const cx = lerp(lineStart.x, lineEnd.x, e);
-      const cy = lerp(lineStart.y, lineEnd.y, e);
-      // The first rAF `now` can precede `t0` (frame-start timestamp) → `t` < 0, and
-      // a degenerate interval could be ≤0/non-finite — either makes the raw index
-      // negative/NaN. Floor to 0 then normalize into [0, len-1] so we never index
-      // frames[NaN] / frames[-1].
-      const raw =
-        Number.isFinite(frameInterval) && frameInterval > 0
-          ? Math.floor(t / frameInterval)
-          : 0;
-      const fi = loop
-        ? ((raw % frames.length) + frames.length) % frames.length
-        : Math.min(frames.length - 1, Math.max(0, raw));
-      const f = frames[fi];
-      if (!f) return; // degenerate index → skip the sprite this frame, keep the field
-      const dw = f.w * spriteScaleX;
-      const dh = f.h * spriteScaleY;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(travelAngle);
-      ctx.scale(spriteFlip, spriteFlip);
-      ctx.drawImage(img, f.x, f.y, f.w, f.h, -dw / 2, -dh / 2, dw, dh);
-      ctx.restore();
+      drawMockUnit(casterPos, "player", 1);
+      drawMockUnit(targetPos, "enemy", -1);
+      const impactPulse = t >= FLIGHT_MS ? Math.max(0, 1 - (t - FLIGHT_MS) / 120) : 0;
+      if (t < FLIGHT_MS) {
+        const e = easeInOutQuad(t / FLIGHT_MS);
+        const cx = lerp(lineStart.x, lineEnd.x, e);
+        const cy = lerp(lineStart.y, lineEnd.y, e);
+        // The first rAF `now` can precede `t0` (frame-start timestamp) → `t` < 0, and
+        // a degenerate interval could be ≤0/non-finite — either makes the raw index
+        // negative/NaN. Floor to 0 then normalize into [0, len-1] so we never index
+        // frames[NaN] / frames[-1].
+        const raw =
+          Number.isFinite(frameInterval) && frameInterval > 0
+            ? Math.floor(t / frameInterval)
+            : 0;
+        const fi = loop
+          ? ((raw % frames.length) + frames.length) % frames.length
+          : Math.min(frames.length - 1, Math.max(0, raw));
+        const f = frames[fi];
+        if (!f) return; // degenerate index → skip the sprite this frame, keep the field
+        const dw = f.w * spriteScaleX;
+        const dh = f.h * spriteScaleY;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(travelAngle);
+        ctx.scale(spriteFlip, spriteFlip);
+        ctx.drawImage(img, f.x, f.y, f.w, f.h, -dw / 2, -dh / 2, dw, dh);
+        ctx.restore();
+      }
+      drawImpact(targetPos, impactPulse);
     };
 
     const tick = (now: number) => {
