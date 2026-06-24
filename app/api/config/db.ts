@@ -12,6 +12,7 @@ import type {
   SpellDef,
   SpellTransition,
   SpellType,
+  CampaignDef,
 } from "@/lib/battle/types";
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -110,6 +111,14 @@ function createDb(): Database.Database {
       rotation      REAL,
       sort_order    INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id           TEXT PRIMARY KEY,
+      name         TEXT NOT NULL,
+      wave_count   INTEGER NOT NULL DEFAULT 1,
+      monster_pool TEXT NOT NULL DEFAULT '[]',
+      is_active    INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_one_active ON campaigns (is_active) WHERE is_active = 1;
     CREATE TABLE IF NOT EXISTS character_spells (
       character_id TEXT NOT NULL,
       spell_id     TEXT NOT NULL,
@@ -797,6 +806,98 @@ export function deleteSpell(id: string): void {
     db.prepare("DELETE FROM spells WHERE id = ?").run(id);
     db.prepare("DELETE FROM character_spells WHERE spell_id = ?").run(id);
   })();
+}
+
+// ---------------------------------------------------------------------------
+// Campaigns — the /camp consecutive-wave runner config. Each row is a named
+// campaign (id, name, wave count, monster pool). Exactly one campaign may be
+// active at a time, enforced by a partial unique index on is_active.
+// ---------------------------------------------------------------------------
+
+/** All campaigns, ordered by name then id (monsterPool parsed to string[]). */
+export function listCampaigns(): CampaignDef[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, name, wave_count, monster_pool, is_active
+         FROM campaigns ORDER BY name, id`,
+    )
+    .all() as Array<{
+    id: string;
+    name: string;
+    wave_count: number;
+    monster_pool: string | null;
+    is_active: number;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    waveCount: r.wave_count,
+    monsterPool: parseMonsterPool(r.monster_pool),
+    isActive: !!r.is_active,
+  }));
+}
+
+function parseMonsterPool(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((x): x is string => typeof x === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Idempotent upsert of a campaign. Does NOT touch is_active. */
+export function upsertCampaign(c: {
+  id: string;
+  name: string;
+  waveCount: number;
+  monsterPool: string[];
+}): void {
+  const waveCount = Math.min(50, Math.max(1, Math.floor(Number(c.waveCount) || 1)));
+  const monsterPool = JSON.stringify(
+    Array.isArray(c.monsterPool)
+      ? c.monsterPool.filter((x) => typeof x === "string")
+      : [],
+  );
+  getDb()
+    .prepare(
+      `INSERT INTO campaigns (id, name, wave_count, monster_pool)
+         VALUES (@id, @name, @wave_count, @monster_pool)
+       ON CONFLICT(id) DO UPDATE SET
+         name        = excluded.name,
+         wave_count  = excluded.wave_count,
+         monster_pool = excluded.monster_pool`,
+    )
+    .run({
+      id: c.id,
+      name: c.name,
+      wave_count: waveCount,
+      monster_pool: monsterPool,
+    });
+}
+
+/**
+ * Activates exactly one campaign (deactivates all others first, inside a
+ * transaction). Pass null to clear the active campaign entirely. This is the
+ * ONLY writer that sets is_active = 1; the partial unique index ensures at
+ * most one active row at all times.
+ */
+export function setActiveCampaign(id: string | null): void {
+  const db = getDb();
+  db.transaction(() => {
+    db.prepare("UPDATE campaigns SET is_active = 0 WHERE is_active = 1").run();
+    if (id != null) {
+      db.prepare("UPDATE campaigns SET is_active = 1 WHERE id = ?").run(id);
+    }
+  })();
+}
+
+/** Deletes a campaign by id. (No child tables; deleting the active campaign is valid.) */
+export function deleteCampaign(id: string): void {
+  getDb().prepare("DELETE FROM campaigns WHERE id = ?").run(id);
 }
 
 /** Replace-all set of a character's owned spell ids (sort_order = array index). */

@@ -80,6 +80,24 @@ export const DEFAULT_SPELL_FPS = 12; // projectile playback fps when a spell has
 export const DEFAULT_SPELL_DURATION = 0.36; // projectile flight seconds (matches SPELL_FLIGHT_MS)
 export const SPELL_FADE_MS = 140; // projectile transition-in/out alpha fade duration (ms), clamped to ≤ half of flight time
 
+// ---- Campaigns (CMS-managed; the /camp consecutive-wave runner config) ----
+// CMS entity, persisted in `campaigns`, surfaced in GET /api/config as `campaigns`.
+// Sim-inert: a campaign NEVER enters the engine or the resolve payload — it only
+// configures how the (future) /camp screen spawns successive waves. Exactly one
+// campaign may be active at a time (enforced by a partial unique index in db.ts:
+// `CREATE UNIQUE INDEX ... ON campaigns(is_active) WHERE is_active = 1`).
+export type CampaignDef = {
+  id: string;
+  name: string;
+  waveCount: number; // number of consecutive waves (>= 1)
+  monsterPool: string[]; // character ids enemies are spawned from across the waves
+  isActive: boolean; // exactly one campaign is active at a time
+};
+
+export const CAMPAIGN_BOUNDS = {
+  waveCount: { min: 1, max: 50 },
+} as const;
+
 export type UnitStats = {
   hp: number;
   attack: number;

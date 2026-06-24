@@ -2133,6 +2133,9 @@ export default function StudioClient() {
         <a className="menu-bar-item" href="/studio/spells">
           Spells
         </a>
+        <a className="menu-bar-item" href="/studio/campaigns">
+          Campaigns
+        </a>
         <a className="menu-bar-item" href="/studio/mock-battle">
           Mock Battle
         </a>

@@ -12,6 +12,7 @@ import {
   listSpells,
   getCharacterSpells,
   getRoster,
+  listCampaigns,
 } from "./db";
 
 export const runtime = "nodejs";
@@ -36,6 +37,7 @@ export async function GET() {
     damageConfig: getDamageConfig(),
     spells: listSpells(),
     characterSpells: getCharacterSpells(),
+    campaigns: listCampaigns(),
     roster: getRoster(),
   });
 }
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
   delete userState.damageConfig;
   delete userState.spells;
   delete userState.characterSpells;
+  delete userState.campaigns;
   delete userState.roster;
   writeUserState(userState);
   return NextResponse.json({ ok: true });

@@ -640,6 +640,12 @@ export default function SpellEditPage() {
         <Link className="menu-bar-item" href="/studio/spells">
           Spells
         </Link>
+        <Link className="menu-bar-item" href="/studio/campaigns">
+          Campaigns
+        </Link>
+        <Link className="menu-bar-item" href="/studio/mock-battle">
+          Mock Battle
+        </Link>
       </nav>
 
       <div className="spells-wrap">

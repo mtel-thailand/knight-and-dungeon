@@ -106,6 +106,9 @@ export default function SpellsListPage() {
         <span className="menu-bar-item is-current" aria-current="page">
           Spells
         </span>
+        <Link className="menu-bar-item" href="/studio/campaigns">
+          Campaigns
+        </Link>
         <Link className="menu-bar-item" href="/studio/mock-battle">
           Mock Battle
         </Link>
