@@ -38,14 +38,27 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  // Light coercion; upsertSpell applies defaults (attack / power 1 / cooldown 0).
+  // Coerce to a finite number (NaN/±Infinity → undefined → upsertSpell default/NULL).
+  const fin = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  // Forward the FULL spell incl. the visual playback config. upsertSpell does an
+  // ON CONFLICT replace of fps/scale/loop/duration/offsets/rotation, so omitting
+  // any here NULLs out that saved field on every save — which silently dropped the
+  // whole playback config (the "save doesn't persist" bug).
   upsertSpell({
     id: spell.id,
     name: spell.name,
     animationKey: typeof spell.animationKey === "string" ? spell.animationKey : null,
     type: spell.type === "attack" ? "attack" : undefined,
-    power: typeof spell.power === "number" ? spell.power : undefined,
-    cooldown: typeof spell.cooldown === "number" ? spell.cooldown : undefined,
+    power: fin(spell.power),
+    cooldown: fin(spell.cooldown),
+    fps: fin(spell.fps),
+    scale: fin(spell.scale),
+    loop: typeof spell.loop === "boolean" ? spell.loop : undefined,
+    duration: fin(spell.duration),
+    offsetX: fin(spell.offsetX),
+    offsetY: fin(spell.offsetY),
+    rotation: fin(spell.rotation),
   });
   return NextResponse.json({ ok: true });
 }
