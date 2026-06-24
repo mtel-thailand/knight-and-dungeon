@@ -6,29 +6,29 @@ import type {
   Texture as PixiTexture,
 } from "pixi.js";
 import type {
+  HexPosition,
   UnitStats,
   CharacterRoleMap,
   SpellDef,
+  MapConfig,
 } from "@/lib/battle/types";
-import { STAT_BOUNDS } from "@/lib/battle/types";
+import { BOARD, DEFAULT_MAP_CONFIG, STAT_BOUNDS } from "@/lib/battle/types";
 import {
   SOURCE_FPS,
   TICKER_FPS,
   PREVIEW_TICK_MS,
   PANEL_W,
   DUAL_PANEL_W,
-  GRID,
   DEFAULT_CHARACTER,
 } from "./studioConstants";
 import { STUDIO_CSS } from "./studioStyles";
 import {
   slugify,
   getHexRowsFromCounts,
-  isoPos,
-  isoHex,
   defaultCharConfig,
 } from "./studioHelpers";
 import { createStudioBattlePanel } from "./studioBattlePanel";
+import { createBattleBoard } from "./mock-battle/battleBoard";
 import type {
   AnimConfig,
   AnimationRow,
@@ -60,6 +60,7 @@ export default function StudioClient() {
         Application,
         Assets,
         AnimatedSprite,
+        Container,
         Graphics,
         Spritesheet,
         Texture,
@@ -111,6 +112,15 @@ export default function StudioClient() {
         pixiApp.destroy();
         return;
       }
+
+      const studioMapBounds = {
+        tileWidth: { min: 16, max: 400 },
+        tileHeightRatio: { min: 0.1, max: 1 },
+        scale: { min: 0.25, max: 4 },
+        rotation: { min: -180, max: 180 },
+        rotationX: { min: -80, max: 80 },
+        rotationY: { min: -80, max: 80 },
+      } as const;
 
       const catalog: CatalogEntry[] = bootstrap.animations ?? [];
 
@@ -325,144 +335,94 @@ export default function StudioClient() {
         }
       }
 
-      // Hex grid — pointy-top hexagons, 5-6-7-6-5 layout centered on canvas
-      let tileOffset = { px: 0, py: 0 };
-      let isoTileW = GRID.tileW;
-      let isoTileHRatio = GRID.tileHRatio;
-      const hexGrid = new Graphics();
-      const tilePosMap: { label: string; px: number; py: number }[] = [];
-
-      function drawIsoGrid() {
-        hexGrid.clear();
-        const tW = isoTileW;
-        const tH = isoTileW * isoTileHRatio;
-        const rowCols: number[][] = getHexRowsFromCounts(GRID.rows);
-        const cR = (rowCols.length - 1) / 2;
-
-        // Iso-hex floor matching the mock-battle board: 6-point honeycomb tiles
-        // (shared isoPos lattice + isoHex corners at 94% for the seam gap),
-        // neutral fill + faint cyan stroke. No tile/center dots.
-        tilePosMap.length = 0;
-        rowCols.forEach((cols, ri) => {
-          const r = ri - cR;
-          cols.forEach((q) => {
-            const { x, y } = isoPos(q, r, tW, tH);
-            hexGrid.poly(isoHex(x, y, tW * 0.94, tH * 0.94).flat());
-            hexGrid.fill({ color: GRID.tileFill, alpha: 0.55 });
-            hexGrid.stroke({ color: GRID.tileStroke, width: 1.5, alpha: 0.2 });
-            tilePosMap.push({
-              label: `Tile ${tilePosMap.length + 1}`,
-              px: x,
-              py: y,
-            });
-          });
+      // ---- Reuse createBattleBoard from mock-battle for the tilted iso board ----
+      // Build the board from the shared persisted MapConfig (read from bootstrap,
+      // driven by the mock-battle's DisplayConfigPanel; the studio only READS it).
+      const mapCfg: MapConfig = { ...DEFAULT_MAP_CONFIG, ...(bootstrap.mapConfig ?? {}) };
+      const mapCfgRef = { current: mapCfg };
+      const hexes: HexPosition[] = getHexRowsFromCounts([...BOARD.rowCounts])
+        .flatMap((cols, ri) => {
+          const r = ri - (BOARD.rowCounts.length - 1) / 2;
+          return cols.map((q) => ({ q, r }));
         });
-      }
 
-      function refreshIsoGrid() {
-        drawIsoGrid();
-        tileSelect.innerHTML = "";
-        tilePosMap.forEach((t, i) => {
-          const opt = document.createElement("option");
-          opt.value = String(i);
-          opt.textContent = t.label;
-          tileSelect.appendChild(opt);
-        });
-        const parsed = parseInt(tileSelect.value, 10);
-        const fallback = Math.floor(tilePosMap.length / 2);
-        const curIdx = Math.max(
-          0,
-          Math.min(
-            Number.isNaN(parsed) ? fallback : parsed,
-            tilePosMap.length - 1,
-          ),
-        );
-        tileSelect.value = String(curIdx);
-        const t = tilePosMap[curIdx];
-        if (t) {
-          tileOffset = { px: t.px, py: t.py };
-          repositionStage();
-        }
-      }
+      // Container hierarchy: stage → viewport → board → grid + unitsLayer
+      const viewport = new Container();
+      pixiApp.stage.addChild(viewport);
+      const board = new Container();
+      viewport.addChild(board);
+      const grid = new Graphics();
+      board.addChild(grid);
+      const unitsLayer = new Container();
+      board.addChild(unitsLayer);
 
-      drawIsoGrid();
-      hexGrid.position.set(pixiApp.screen.width / 2, pixiApp.screen.height / 2);
-      pixiApp.stage.addChild(hexGrid);
+      const TW0 = DEFAULT_MAP_CONFIG.tileWidth; // sprite-build reference
+      const boardLayout = {
+        tileW: mapCfg.tileWidth,
+        ratio: mapCfg.tileHeightRatio,
+        boardScale: mapCfg.scale,
+        rotRad: (mapCfg.rotation * Math.PI) / 180,
+        rotXRad: (mapCfg.rotationX * Math.PI) / 180,
+        rotYRad: (mapCfg.rotationY * Math.PI) / 180,
+      };
+
+      const sprites: Record<string, { q: number; r: number; node: any }> = {};
+      const { pixelOf, centerBoard, relayout } = createBattleBoard({
+        pixiApp,
+        board,
+        viewport,
+        grid,
+        sprites,
+        hexes,
+        TW0,
+        boardLayout,
+        mapCfgRef,
+        MAP_BOUNDS: studioMapBounds,
+      });
+
+      // The preview sprite: a BattleBoardSprite consisting of a node (Container at a
+      // hex, billboard-corrected) with `anim` as its body child. Per-character
+      // transforms stay on the body; the node handles board positioning/counter-foreshorten.
+      let previewQ: number = 0;
+      let previewR: number = BOARD.playerRow;
+      const previewNode = new Container();
+      unitsLayer.addChild(previewNode);
 
       const anim = new AnimatedSprite(
         animations[currentIndex]?.frames ?? [Texture.EMPTY],
       );
       anim.anchor.set(0.5);
-      pixiApp.stage.addChild(anim);
-      applyAnimation(currentIndex);
+      previewNode.addChild(anim);
+      sprites["preview"] = { q: previewQ, r: previewR, node: previewNode };
 
-      function repositionStage() {
-        const cx = pixiApp.screen.width / 2;
-        const cy = pixiApp.screen.height / 2;
-        hexGrid.position.set(cx, cy);
-        anim.position.set(cx + tileOffset.px, cy + tileOffset.py);
-      }
-
-      // Tile position dropdown — overlaid at top-center of canvas
+      // Tile position dropdown — overlaid at top-center of canvas. Uses the hex
+      // array loaded from BOARD.rowCounts (same 5-6-7-6-5 set the board renders).
       const tileSelect = document.createElement("select");
       tileSelect.className = "tile-select";
-      tilePosMap.forEach((t, i) => {
+      hexes.forEach((h, i) => {
         const opt = document.createElement("option");
         opt.value = String(i);
-        opt.textContent = t.label;
-        if (t.px === 0 && t.py === 0) opt.selected = true;
+        opt.textContent = `Tile ${i + 1} (q=${h.q} r=${h.r})`;
         tileSelect.appendChild(opt);
       });
       tileSelect.addEventListener("change", () => {
-        const t = tilePosMap[parseInt(tileSelect.value)];
-        tileOffset = { px: t.px, py: t.py };
-        repositionStage();
+        const h = hexes[parseInt(tileSelect.value)];
+        if (h) {
+          previewQ = h.q;
+          previewR = h.r;
+          sprites["preview"].q = h.q;
+          sprites["preview"].r = h.r;
+          relayout();
+        }
       });
       const mapOverlay = document.createElement("div");
       mapOverlay.className = "map-overlay";
       mapOverlay.appendChild(tileSelect);
-
-      const tWLabel = document.createElement("span");
-      tWLabel.className = "map-overlay-label";
-      tWLabel.textContent = "W:";
-      const tWInp = document.createElement("input");
-      tWInp.type = "number";
-      tWInp.className = "map-overlay-input";
-      tWInp.min = "40";
-      tWInp.max = "300";
-      tWInp.step = "4";
-      tWInp.value = String(isoTileW);
-      tWInp.addEventListener("input", () => {
-        const v = parseFloat(tWInp.value);
-        if (!isNaN(v) && v > 0) {
-          isoTileW = v;
-          refreshIsoGrid();
-        }
-      });
-
-      const tHLabel = document.createElement("span");
-      tHLabel.className = "map-overlay-label";
-      tHLabel.textContent = "H:";
-      const tHInp = document.createElement("input");
-      tHInp.type = "number";
-      tHInp.className = "map-overlay-input";
-      tHInp.min = "0.1";
-      tHInp.max = "1.0";
-      tHInp.step = "0.05";
-      tHInp.value = String(isoTileHRatio);
-      tHInp.addEventListener("input", () => {
-        const v = parseFloat(tHInp.value);
-        if (!isNaN(v) && v > 0) {
-          isoTileHRatio = v;
-          refreshIsoGrid();
-        }
-      });
-
-      mapOverlay.appendChild(tWLabel);
-      mapOverlay.appendChild(tWInp);
-      mapOverlay.appendChild(tHLabel);
-      mapOverlay.appendChild(tHInp);
       canvasWrapper.appendChild(mapOverlay);
+
+      // Paint the first sprite and apply board layout
+      applyAnimation(currentIndex);
+      relayout();
 
       // Empty-state hint shown on the canvas when there is no active character.
       const emptyHint = document.createElement("div");
@@ -504,7 +464,7 @@ export default function StudioClient() {
         anim.alpha = cfg.alpha;
         anim.rotation = (cfg.rotation * Math.PI) / 180;
         anim.tint = charConfig.tint;
-        repositionStage();
+        centerBoard();
         anim.play();
       }
 
@@ -516,7 +476,7 @@ export default function StudioClient() {
       }
 
       resizeHandler = () => {
-        repositionStage();
+        centerBoard();
       };
       window.addEventListener("resize", resizeHandler);
 
@@ -677,7 +637,7 @@ export default function StudioClient() {
         gearBtn.classList.toggle("panel-open", panelOpen);
         canvasWrapper.style.right = panelOpen ? PANEL_W : "0px";
         setTimeout(() => {
-          if (!destroyed) repositionStage();
+          if (!destroyed) centerBoard();
         }, 300);
       });
 
@@ -1136,13 +1096,11 @@ export default function StudioClient() {
         makeCharCfgRow("Anchor X", charConfig.anchorX, 0, 1, 0.01, (v) => {
           charConfig.anchorX = v;
           anim.anchor.x = v;
-          repositionStage();
           persistCharConfig();
         });
         makeCharCfgRow("Anchor Y", charConfig.anchorY, 0, 1, 0.01, (v) => {
           charConfig.anchorY = v;
           anim.anchor.y = v;
-          repositionStage();
           persistCharConfig();
         });
 
@@ -1632,7 +1590,7 @@ export default function StudioClient() {
         charBtn.classList.toggle("anim-open", charPanelOpen);
         canvasWrapper.style.left = charPanelOpen ? DUAL_PANEL_W : "0px";
         setTimeout(() => {
-          if (!destroyed) repositionStage();
+          if (!destroyed) centerBoard();
         }, 300);
       }
 
