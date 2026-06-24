@@ -61,7 +61,7 @@ export const SPELL_BOUNDS = {
   power: { min: 0, max: 100 },
   cooldown: { min: 0, max: 600 },
   fps: { min: 1, max: 60 },
-  scale: { min: 0.1, max: 4 },
+  scale: { min: -10, max: 10 },
   duration: { min: 0.05, max: 5 },
   offsetX: { min: -200, max: 200 },
   offsetY: { min: -200, max: 200 },
