@@ -407,6 +407,8 @@ export default function StudioClient() {
       board.addChild(unitsLayer);
 
       const TW0 = DEFAULT_MAP_CONFIG.tileWidth; // sprite-build reference
+      const BODY_H = TW0 * 1.3; // target body height in tile units (matches mock-battle)
+      let bodyBaseScale = 1; // normalization factor: BODY_H / native frame height
       const boardLayout = {
         tileW: mapCfg.tileWidth,
         ratio: mapCfg.tileHeightRatio,
@@ -510,7 +512,18 @@ export default function StudioClient() {
         anim.textures = def.frames;
         anim.animationSpeed = anim.totalFrames / (cfg.duration * TICKER_FPS);
         anim.loop = cfg.loop;
-        anim.scale.set(charConfig.scaleX, charConfig.scaleY);
+        // Normalize the body to the battle's tile height (BODY_H), like the
+        // mock-battle's s = BODY_H / body.height; the per-character Scale X/Y
+        // is a multiplier on top. frameH is the native (scale-independent)
+        // frame height — prefer anim.texture.height (Pixi v8 current frame),
+        // fall back to the native height recovered from the current scale.
+        const frameH =
+          anim.texture?.height || anim.height / (anim.scale.y || 1) || BODY_H;
+        bodyBaseScale = BODY_H / frameH;
+        anim.scale.set(
+          bodyBaseScale * charConfig.scaleX,
+          bodyBaseScale * charConfig.scaleY,
+        );
         anim.anchor.set(charConfig.anchorX, charConfig.anchorY);
         anim.alpha = cfg.alpha;
         anim.rotation = (cfg.rotation * Math.PI) / 180;
@@ -1130,12 +1143,12 @@ export default function StudioClient() {
 
         makeCharCfgRow("Scale X", charConfig.scaleX, 0.01, 10, 0.01, (v) => {
           charConfig.scaleX = v;
-          anim.scale.x = v;
+          anim.scale.x = bodyBaseScale * v;
           persistCharConfig();
         });
         makeCharCfgRow("Scale Y", charConfig.scaleY, 0.01, 10, 0.01, (v) => {
           charConfig.scaleY = v;
-          anim.scale.y = v;
+          anim.scale.y = bodyBaseScale * v;
           persistCharConfig();
         });
         makeCharCfgRow("Anchor X", charConfig.anchorX, 0, 1, 0.01, (v) => {
