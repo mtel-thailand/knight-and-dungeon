@@ -107,19 +107,31 @@ export const SPELLS_PAGE_CSS = `
   .spells-page .spell-hint { margin: 0; font-size: 11px; color: rgba(255,255,255,0.35); line-height: 1.4; }
 
   /* --- Animation preview + playback config --- */
-  .spells-page .spell-preview { display: flex; flex-direction: column; gap: 9px; }
+  .spells-page .spell-preview { display: flex; flex-direction: column; gap: 9px; align-items: center; }
   .spells-page .spell-preview-stage {
-    position: relative; display: flex; align-items: center; justify-content: center;
-    min-height: 240px; padding: 18px; box-sizing: border-box; overflow: hidden;
-    border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
-    background:
-      radial-gradient(120% 90% at 50% 0%, rgba(100,210,120,0.07), transparent 70%),
-      repeating-conic-gradient(rgba(255,255,255,0.022) 0% 25%, transparent 0% 50%) 50% / 22px 22px,
-      #07070b;
+    position: relative; width: min(420px, 100%); aspect-ratio: 1 / 1;
+    min-width: 0; min-height: 0; overflow: hidden; isolation: isolate;
+    border-radius: 0; background: radial-gradient(78% 64% at 50% 50%, rgba(40,72,92,0.16), transparent 76%);
+  }
+  .spells-page .spell-preview-video {
+    position: absolute; inset: 0; z-index: 0;
+    width: 100%; height: 100%; object-fit: cover; object-position: center;
+    pointer-events: none;
+  }
+  .spells-page .spell-preview-scrim {
+    position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background: linear-gradient(180deg, rgba(5,7,13,0.20), rgba(5,7,13,0.40));
+  }
+  .spells-page .spell-preview-content { position: absolute; inset: 0; z-index: 2; }
+  .spells-page .spell-preview-stage::after {
+    content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: 0;
+    box-shadow:
+      inset 0 0 42px 8px rgba(5,8,14,0.5),
+      inset 0 0 0 1px rgba(120,200,230,0.07);
   }
   .spells-page .spell-preview-canvas {
-    max-width: 100%; height: auto; image-rendering: auto;
-    filter: drop-shadow(0 10px 22px rgba(0,0,0,0.55));
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+    image-rendering: auto; pointer-events: none;
   }
   .spells-page .spell-preview-empty {
     display: flex; align-items: center; justify-content: center; text-align: center;

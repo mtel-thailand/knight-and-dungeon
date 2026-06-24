@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { MapConfig, SpellDef } from "@/lib/battle/types";
 import {
+  BOARD,
   DEFAULT_MAP_CONFIG as DEFAULT_MAP,
   SPELL_BOUNDS,
   DEFAULT_SPELL_FPS,
@@ -58,21 +59,10 @@ type FrameRect = { x: number; y: number; w: number; h: number };
 /** A spell's animation loaded and ready to play on the preview canvas. */
 type LoadedSheet = { img: HTMLImageElement; frames: FrameRect[] };
 
-type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
-
 const PREVIEW_BOARD_QS = [-1, 0, 1] as const;
-const PREVIEW_BOARD_R = 0;
-const PREVIEW_PAD = 28;
-const PREVIEW_MIN_W = 640;
-const PREVIEW_MIN_H = 240;
-const PREVIEW_MIN_ASPECT = 3.25;
-
-function expandBounds(bounds: Bounds, x: number, y: number) {
-  bounds.minX = Math.min(bounds.minX, x);
-  bounds.minY = Math.min(bounds.minY, y);
-  bounds.maxX = Math.max(bounds.maxX, x);
-  bounds.maxY = Math.max(bounds.maxY, y);
-}
+const PREVIEW_BOARD_R = BOARD.playerRow;
+const BOARD_REF_SIDE = 640;
+const BOTTOM_INSET = 8;
 
 function transformPoint(
   x: number,
@@ -107,6 +97,8 @@ export default function SpellEditPage() {
   const [animations, setAnimations] = useState<CatalogEntry[]>([]);
   const [mapConfig, setMapConfig] = useState<MapConfig>(() => ({ ...DEFAULT_MAP }));
   const [sheet, setSheet] = useState<LoadedSheet | null>(null);
+  const [previewSide, setPreviewSide] = useState(0);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -170,27 +162,85 @@ export default function SpellEditPage() {
     };
   }, [animations, spell?.animationKey]);
 
+  const animKey = spell?.animationKey ?? "";
+  const previewEntry = animKey
+    ? animations.find((a) => a.key === animKey) ?? null
+    : null;
+  const canPreview = !!(previewEntry && previewEntry.image && previewEntry.frameData);
+
   // Demo the spell on a tiny mock-battle-like iso strip: one row, three tiles,
   // with the spell sprite traveling from the first tile to the last while the
   // board uses the same iso geometry + view transform as the battle board.
   // `loop` still governs only the FRAMES (on → cycle while flying; off → play
   // once then hold the last frame); the flight itself always repeats. Re-runs
-  // (and cancels the rAF) whenever the sheet, knobs, or map config changes.
+  // (and cancels the rAF) whenever the sheet, knobs, field size, or map config
+  // changes.
+  useEffect(() => {
+    if (!canPreview) {
+      setPreviewSide(0);
+      return;
+    }
+    const el = stageRef.current;
+    if (!el) return;
+
+    let raf = 0;
+    const sync = () => {
+      const next = Math.max(0, Math.round(el.getBoundingClientRect().width));
+      setPreviewSide((prev) => (prev === next ? prev : next));
+    };
+
+    sync();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(sync);
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [canPreview]);
+
   useEffect(() => {
     const cv = canvasRef.current;
-    if (!cv || !sheet || sheet.frames.length === 0) return;
+    if (!cv || !sheet || sheet.frames.length === 0 || previewSide <= 0) return;
 
     const { img, frames } = sheet;
     // finiteOr (not ??) so a NaN/±Infinity persisted value can't leak through and
     // poison the flight cycle (NaN cycle → NaN `t` → NaN frame index → crash).
-    const fps = clamp(finiteOr(spell?.fps, DEFAULT_SPELL_FPS), SPELL_BOUNDS.fps.min, SPELL_BOUNDS.fps.max);
-    const scale = clamp(finiteOr(spell?.scale, 1), SPELL_BOUNDS.scale.min, SPELL_BOUNDS.scale.max);
+    const fps = clamp(
+      finiteOr(spell?.fps, DEFAULT_SPELL_FPS),
+      SPELL_BOUNDS.fps.min,
+      SPELL_BOUNDS.fps.max,
+    );
+    const scale = clamp(
+      finiteOr(spell?.scale, 1),
+      SPELL_BOUNDS.scale.min,
+      SPELL_BOUNDS.scale.max,
+    );
     const loop = spell?.loop ?? true;
     // Flight knobs — re-clamped here like fps/scale (the form clamps on edit too).
-    const duration = clamp(finiteOr(spell?.duration, DEFAULT_SPELL_DURATION), SPELL_BOUNDS.duration.min, SPELL_BOUNDS.duration.max);
-    const offX = clamp(finiteOr(spell?.offsetX, 0), SPELL_BOUNDS.offsetX.min, SPELL_BOUNDS.offsetX.max);
-    const offY = clamp(finiteOr(spell?.offsetY, 0), SPELL_BOUNDS.offsetY.min, SPELL_BOUNDS.offsetY.max);
-    const rotDeg = clamp(finiteOr(spell?.rotation, 0), SPELL_BOUNDS.rotation.min, SPELL_BOUNDS.rotation.max);
+    const duration = clamp(
+      finiteOr(spell?.duration, DEFAULT_SPELL_DURATION),
+      SPELL_BOUNDS.duration.min,
+      SPELL_BOUNDS.duration.max,
+    );
+    const offX = clamp(
+      finiteOr(spell?.offsetX, 0),
+      SPELL_BOUNDS.offsetX.min,
+      SPELL_BOUNDS.offsetX.max,
+    );
+    const offY = clamp(
+      finiteOr(spell?.offsetY, 0),
+      SPELL_BOUNDS.offsetY.min,
+      SPELL_BOUNDS.offsetY.max,
+    );
+    const rotDeg = clamp(
+      finiteOr(spell?.rotation, 0),
+      SPELL_BOUNDS.rotation.min,
+      SPELL_BOUNDS.rotation.max,
+    );
 
     const map = mapConfig ?? DEFAULT_MAP;
     const tileW = map.tileWidth;
@@ -199,70 +249,74 @@ export default function SpellEditPage() {
     const rotRad = (map.rotation * Math.PI) / 180;
     const rotXRad = (map.rotationX * Math.PI) / 180;
     const rotYRad = (map.rotationY * Math.PI) / 180;
-    const fitScale = 1; // preview canvas is the viewport; bounds add the padding.
+    const fitScale = previewSide / BOARD_REF_SIDE;
     const viewScaleX = boardScale * fitScale * Math.cos(rotYRad);
     const viewScaleY = boardScale * fitScale * Math.cos(rotXRad);
     const rotOffRad = (rotDeg * Math.PI) / 180;
 
-    const frameW = Math.max(...frames.map((f) => f.w));
-    const frameH = Math.max(...frames.map((f) => f.h));
-    const spriteScale = scale * boardScale * fitScale * (tileW / DEFAULT_MAP.tileWidth);
-    const spriteW = frameW * spriteScale;
-    const spriteH = frameH * spriteScale;
+    const hexes = PREVIEW_BOARD_QS.map((q) => ({ q, r: PREVIEW_BOARD_R }));
+    const hw = tileW / 2;
+    const hh = tileH / 2;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    for (const h of hexes) {
+      const p = isoPos(h.q, h.r, tileW, tileH);
+      minX = Math.min(minX, p.x - hw);
+      maxX = Math.max(maxX, p.x + hw);
+      minY = Math.min(minY, p.y - hh);
+      maxY = Math.max(maxY, p.y + hh);
+    }
+    const pivotX = (minX + maxX) / 2;
+    const pivotY = (minY + maxY) / 2;
+    const halfW = (maxX - minX) / 2;
+    const halfH = (maxY - minY) / 2;
+    const bottomDrop =
+      (Math.abs(halfW * Math.sin(rotRad)) + Math.abs(halfH * Math.cos(rotRad))) *
+      boardScale *
+      fitScale *
+      Math.cos(rotXRad);
+    const originX = previewSide / 2;
+    const originY = previewSide - BOTTOM_INSET - bottomDrop;
+    const tileFill =
+      PREVIEW_BOARD_R === BOARD.playerRow
+        ? "rgba(22,58,74,0.55)"
+        : PREVIEW_BOARD_R === BOARD.enemyRow
+          ? "rgba(70,32,46,0.55)"
+          : "rgba(26,32,48,0.55)";
 
-    const boardPolys = PREVIEW_BOARD_QS.map((q) => {
-      const p = isoPos(q, PREVIEW_BOARD_R, tileW, tileH);
+    const project = (pt: { x: number; y: number }) => {
+      const local = transformPoint(pt.x - pivotX, pt.y - pivotY, rotRad, viewScaleX, viewScaleY);
+      return { x: originX + local.x, y: originY + local.y };
+    };
+
+    const boardPolys = hexes.map((h) => {
+      const p = isoPos(h.q, h.r, tileW, tileH);
       return isoHex(p.x, p.y, tileW * 0.94, tileH * 0.94);
     });
     const startLocal = isoPos(PREVIEW_BOARD_QS[0], PREVIEW_BOARD_R, tileW, tileH);
     const endLocal = isoPos(PREVIEW_BOARD_QS[2], PREVIEW_BOARD_R, tileW, tileH);
-    const startScreen = transformPoint(startLocal.x, startLocal.y, rotRad, viewScaleX, viewScaleY);
-    const endScreen = transformPoint(endLocal.x, endLocal.y, rotRad, viewScaleX, viewScaleY);
+    const start = project(startLocal);
+    const end = project(endLocal);
     const shiftX = offX;
     const shiftY = -offY;
-    const start = { x: startScreen.x + shiftX, y: startScreen.y + shiftY };
-    const end = { x: endScreen.x + shiftX, y: endScreen.y + shiftY };
-    const travelAngle = Math.atan2(end.y - start.y, end.x - start.x) + rotOffRad;
-    const cosA = Math.abs(Math.cos(travelAngle));
-    const sinA = Math.abs(Math.sin(travelAngle));
-    const spriteHalfW = (spriteW * cosA + spriteH * sinA) / 2;
-    const spriteHalfH = (spriteW * sinA + spriteH * cosA) / 2;
+    const lineStart = { x: start.x + shiftX, y: start.y + shiftY };
+    const lineEnd = { x: end.x + shiftX, y: end.y + shiftY };
+    const travelAngle =
+      Math.atan2(lineEnd.y - lineStart.y, lineEnd.x - lineStart.x) + rotOffRad;
+    const boardScaleFactor =
+      scale * boardScale * fitScale * (tileW / DEFAULT_MAP.tileWidth);
+    const spriteScaleX = boardScaleFactor / Math.cos(rotYRad);
+    const spriteScaleY = boardScaleFactor / Math.cos(rotXRad);
 
-    const bounds: Bounds = {
-      minX: Infinity,
-      minY: Infinity,
-      maxX: -Infinity,
-      maxY: -Infinity,
-    };
-
-    for (const poly of boardPolys) {
-      for (const [x, y] of poly) {
-        const pt = transformPoint(x, y, rotRad, viewScaleX, viewScaleY);
-        expandBounds(bounds, pt.x, pt.y);
-      }
-    }
-
-    expandBounds(bounds, Math.min(start.x, end.x) - spriteHalfW, Math.min(start.y, end.y) - spriteHalfH);
-    expandBounds(bounds, Math.min(start.x, end.x) - spriteHalfW, Math.max(start.y, end.y) + spriteHalfH);
-    expandBounds(bounds, Math.max(start.x, end.x) + spriteHalfW, Math.min(start.y, end.y) - spriteHalfH);
-    expandBounds(bounds, Math.max(start.x, end.x) + spriteHalfW, Math.max(start.y, end.y) + spriteHalfH);
-
-    const rawW = Math.max(1, bounds.maxX - bounds.minX);
-    const rawH = Math.max(1, bounds.maxY - bounds.minY);
-    const canvasH = Math.max(Math.ceil(rawH + PREVIEW_PAD * 2), PREVIEW_MIN_H);
-    const canvasW = Math.max(
-      Math.ceil(rawW + PREVIEW_PAD * 2),
-      Math.ceil(canvasH * PREVIEW_MIN_ASPECT),
-      PREVIEW_MIN_W,
-    );
-    cv.width = canvasW;
-    cv.height = canvasH;
-
-    const ox = (canvasW - rawW) / 2 - bounds.minX;
-    const oy = (canvasH - rawH) / 2 - bounds.minY;
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.max(1, Math.round(previewSide * dpr));
+    cv.height = Math.max(1, Math.round(previewSide * dpr));
 
     const ctx = cv.getContext("2d");
     if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const FLIGHT_MS = duration * 1000; // one pass — the spell's Flight (s), in ms
     const GAP_MS = 220; // brief pause (impact) before the flight repeats
@@ -275,18 +329,18 @@ export default function SpellEditPage() {
 
     const drawBoard = () => {
       ctx.save();
-      ctx.translate(ox, oy);
+      ctx.translate(originX, originY);
       ctx.scale(viewScaleX, viewScaleY);
       ctx.rotate(rotRad);
-      for (let i = 0; i < boardPolys.length; i++) {
-        const poly = boardPolys[i];
+      ctx.translate(-pivotX, -pivotY);
+      for (const poly of boardPolys) {
         ctx.beginPath();
         poly.forEach(([x, y], idx) => {
           if (idx === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
         ctx.closePath();
-        ctx.fillStyle = "rgba(26,32,48,0.55)";
+        ctx.fillStyle = tileFill;
         ctx.strokeStyle = "rgba(111,183,214,0.2)";
         ctx.lineWidth = 1.5;
         ctx.fill();
@@ -298,13 +352,12 @@ export default function SpellEditPage() {
     // t: ms into the current pass (0..cycle). Projectile only shows while flying;
     // the gap leaves just the field, reading as a brief impact pause.
     const render = (t: number) => {
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, cv.width, cv.height);
+      ctx.clearRect(0, 0, previewSide, previewSide);
       drawBoard();
       if (t >= FLIGHT_MS) return; // gap between passes
       const e = easeInOutQuad(t / FLIGHT_MS);
-      const cx = lerp(start.x, end.x, e) + ox;
-      const cy = lerp(start.y, end.y, e) + oy;
+      const cx = lerp(lineStart.x, lineEnd.x, e);
+      const cy = lerp(lineStart.y, lineEnd.y, e);
       // The first rAF `now` can precede `t0` (frame-start timestamp) → `t` < 0, and
       // a degenerate interval could be ≤0/non-finite — either makes the raw index
       // negative/NaN. Floor to 0 then normalize into [0, len-1] so we never index
@@ -318,8 +371,8 @@ export default function SpellEditPage() {
         : Math.min(frames.length - 1, Math.max(0, raw));
       const f = frames[fi];
       if (!f) return; // degenerate index → skip the sprite this frame, keep the field
-      const dw = f.w * spriteScale;
-      const dh = f.h * spriteScale;
+      const dw = f.w * spriteScaleX;
+      const dh = f.h * spriteScaleY;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(travelAngle);
@@ -350,6 +403,7 @@ export default function SpellEditPage() {
     spell?.offsetY,
     spell?.rotation,
     mapConfig,
+    previewSide,
   ]);
 
   function update<K extends keyof SpellDef>(key: K, value: SpellDef[K]) {
@@ -439,11 +493,6 @@ export default function SpellEditPage() {
     }
   }
 
-  const animKey = spell?.animationKey ?? "";
-  const previewEntry = animKey
-    ? animations.find((a) => a.key === animKey) ?? null
-    : null;
-  const canPreview = !!(previewEntry && previewEntry.image && previewEntry.frameData);
   // finiteOr (not ??) so a bad NaN value renders as the default in the sliders
   // (and a Save then persists a valid number — self-healing the stored spell).
   const fps = finiteOr(spell?.fps, DEFAULT_SPELL_FPS);
@@ -489,8 +538,33 @@ export default function SpellEditPage() {
               <span className="spell-field-label">Preview</span>
               {canPreview ? (
                 <>
-                  <div className="spell-preview-stage">
-                    <canvas ref={canvasRef} className="spell-preview-canvas" />
+                  <div
+                    ref={stageRef}
+                    className="spell-preview-stage"
+                    style={{
+                      backgroundImage: 'url("/assets/dungeon-bg.png")',
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                      backgroundRepeat: "no-repeat",
+                    }}
+                  >
+                    <video
+                      className="spell-preview-video"
+                      src="/assets/dungeon-bg.mp4"
+                      poster="/assets/dungeon-bg.png"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="auto"
+                      ref={(el) => {
+                        if (el) el.muted = true;
+                      }}
+                    />
+                    <div className="spell-preview-scrim" />
+                    <div className="spell-preview-content">
+                      <canvas ref={canvasRef} className="spell-preview-canvas" />
+                    </div>
                   </div>
                   <div className="spell-preview-cap">{spell.animationKey}</div>
                 </>
