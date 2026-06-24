@@ -24,6 +24,7 @@ import { BoardPreview } from "./BoardPreview";
 import { PartyColumn } from "./PartyColumn";
 import { DisplayConfigPanel } from "./DisplayConfigPanel";
 import { createBattleClips } from "./battleClips";
+import { createBattleBoard } from "./battleBoard";
 import { Jersey_25 } from "next/font/google";
 
 // Pixel display font for the floating damage numbers (self-hosted via next/font,
@@ -551,6 +552,27 @@ function BattleStage({
       let rotXRad = (rotXDeg * Math.PI) / 180;
       let rotYRad = (rotYDeg * Math.PI) / 180;
 
+      const boardLayout = {
+        get tileW() {
+          return tileW;
+        },
+        get ratio() {
+          return ratio;
+        },
+        get boardScale() {
+          return boardScale;
+        },
+        get rotRad() {
+          return rotRad;
+        },
+        get rotXRad() {
+          return rotXRad;
+        },
+        get rotYRad() {
+          return rotYRad;
+        },
+      };
+
       // Outer viewport applies the pseudo-3D tilt (pitch/yaw foreshorten) + zoom
       // OUTSIDE the in-plane Z-rotation, so units can counter just rotation +
       // foreshorten (no shear) and read as upright billboards.
@@ -561,99 +583,30 @@ function BattleStage({
       const sprites: Record<string, SpriteUnit> = {};
       const initialById: Record<string, { q: number; r: number }> = {};
 
-      const pixelOf = (q: number, r: number) =>
-        isoPos(q, r, tileW, tileW * ratio);
-
-      // =============================================================================
-      // SECTION > battleBoard: iso geometry, grid, layout
-      // Seam (Phase 2 -> battleBoard.ts): centerBoard, drawGrid, relayout, applyMap, pixelOf
-      // Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
-      // =============================================================================
-      function centerBoard() {
-        const hw = tileW / 2;
-        const hh = (tileW * ratio) / 2;
-        let nX = Infinity,
-          xX = -Infinity,
-          nY = Infinity,
-          xY = -Infinity;
-        for (const h of hexes) {
-          const p = pixelOf(h.q, h.r);
-          nX = Math.min(nX, p.x - hw);
-          xX = Math.max(xX, p.x + hw);
-          nY = Math.min(nY, p.y - hh);
-          xY = Math.max(xY, p.y + hh);
-        }
-        // Board: in-plane Z-rotation around its local center (the ground plane).
-        board.pivot.set((nX + xX) / 2, (nY + xY) / 2);
-        board.position.set(0, 0);
-        board.scale.set(1);
-        board.rotation = rotRad;
-        // Viewport: overall zoom + pitch/yaw foreshorten, around the screen center.
-        viewport.pivot.set(0, 0);
-        viewport.rotation = 0;
-        // Responsive fit: the mapConfig (tileWidth/scale) is MASTER DATA authored
-        // against a reference square field of BOARD_REF_SIDE px. Scale the whole
-        // board by (live field side / reference) so it occupies the SAME fraction
-        // of the field at ANY size — fixing the "doesn't scale even at 1:1" gap
-        // where the absolute-px board floated at a fixed size while the bg filled.
-        // centerBoard re-runs on resize, so this stays live; units / HP bars /
-        // damage ride the board and track it for free (TW0 cancels out of the
-        // footprint, so their relative proportions and crispness are unchanged).
-        const BOARD_REF_SIDE = 640; // px; the field side the board view is tuned at
-        const fitScale =
-          Math.min(pixiApp.screen.width, pixiApp.screen.height) / BOARD_REF_SIDE;
-        viewport.scale.set(
-          boardScale * fitScale * Math.cos(rotYRad),
-          boardScale * fitScale * Math.cos(rotXRad),
-        );
-        // Bottom-anchor the board to the center band: drop it so the front-most
-        // tile edge rests just inside the bottom border (the Pixi host fills
-        // .gss-center-field, so screen.height === that band's bottom), leaving
-        // the headroom above for the upright units instead of dead space below.
-        // The board's lowest point lies (|halfW·sinθ| + |halfH·cosθ|) below its
-        // pivot in board space (θ = the in-plane Z-rotation); the viewport's
-        // vertical zoom (boardScale·cos(pitch), matching scale.y above) converts
-        // that to screen px.
-        const halfW = (xX - nX) / 2;
-        const halfH = (xY - nY) / 2;
-        const bottomDrop =
-          (Math.abs(halfW * Math.sin(rotRad)) +
-            Math.abs(halfH * Math.cos(rotRad))) *
-          boardScale *
-          fitScale *
-          Math.cos(rotXRad);
-        const BOTTOM_INSET = 8; // so the inner ring/vignette doesn't clip the edge
-        viewport.position.set(
-          pixiApp.screen.width / 2,
-          pixiApp.screen.height - BOTTOM_INSET - bottomDrop,
-        );
-      }
-
-      // Iso hex floor — player row cool, enemy row warm, transit rows neutral.
-      // `grid` is a sibling of `unitsLayer` under `board`, so toggling its
-      // visibility hides ONLY the tiles — units/HP bars/damage numbers stay.
       const grid = new Graphics();
       board.addChild(grid);
       grid.visible = showGridRef.current; // seed from the live toggle on (re)build
       gridVisibleRef.current = (v: boolean) => {
         grid.visible = v;
       };
-      function drawGrid() {
-        const th = tileW * ratio;
-        grid.clear();
-        for (const h of hexes) {
-          const { x, y } = pixelOf(h.q, h.r);
-          grid.poly(isoHex(x, y, tileW * 0.94, th * 0.94).flat());
-          const fill =
-            h.r === BOARD.playerRow
-              ? 0x163a4a
-              : h.r === BOARD.enemyRow
-                ? 0x46202e
-                : 0x1a2030;
-          grid.fill({ color: fill, alpha: 0.55 });
-          grid.stroke({ color: 0x6fb7d6, width: 1.5, alpha: 0.2 });
-        }
-      }
+      const { pixelOf, centerBoard, drawGrid, relayout, applyMap } = createBattleBoard({
+        pixiApp,
+        board,
+        viewport,
+        grid,
+        sprites,
+        hexes,
+        TW0,
+        tileW,
+        ratio,
+        boardScale,
+        rotRad,
+        rotXRad,
+        rotYRad,
+        mapCfgRef,
+        MAP_BOUNDS,
+      });
+      // battleBoard extracted -> ./battleBoard (Phase 2b)
       drawGrid();
 
       // Depth-sorted unit layer (farther rows render behind nearer ones).
@@ -664,8 +617,8 @@ function BattleStage({
       // rotation) so stacking stays correct at any view angle.
       const depthTick = () => {
         if (destroyed) return;
-        const cs = Math.cos(rotRad);
-        const sn = Math.sin(rotRad);
+        const cs = Math.cos(boardLayout.rotRad);
+        const sn = Math.sin(boardLayout.rotRad);
         const px = board.pivot.x;
         const py = board.pivot.y;
         for (const id of Object.keys(sprites)) {
@@ -675,25 +628,6 @@ function BattleStage({
       };
       pixiApp.ticker.add(depthTick);
 
-      // Re-fit + re-place units for the current W/H/Rotation. Units are uniformly
-      // scaled to the live tile and counter-rotated so sprites/HP bars stay upright.
-      function relayout() {
-        drawGrid();
-        const k = tileW / TW0;
-        const isx = 1 / Math.cos(rotYRad); // counter yaw foreshorten
-        const isy = 1 / Math.cos(rotXRad); // counter pitch foreshorten
-        for (const id of Object.keys(sprites)) {
-          const su = sprites[id];
-          const p = pixelOf(su.q, su.r);
-          su.node.position.set(p.x, p.y);
-          su.node.rotation = -rotRad;
-          // Upright, unsquashed billboard — board zoom + counter-rotation only.
-          // Facing lives on the BODY's scale-X (set at build/engage/reset) and is
-          // zoom-independent, so it survives relayout without mirroring the UI.
-          su.node.scale.set(k * isx, k * isy);
-        }
-        centerBoard();
-      }
       centerBoard();
 
       // Paint/repaint a unit's three HP-bar graphics (bg, team accent, fill)
@@ -831,25 +765,6 @@ function BattleStage({
       // reset to a no-op in cleanup so a stale closure can't paint a dead app.
       redrawHealthBarsRef.current = redrawHealthBars;
 
-      // Live board-view bridge. The Display panel mutates mapCfgRef and calls
-      // applyMapRef(); applyMap re-derives the effect-local view vars from the
-      // ref (same clamps/derivations as the setup above) and relayouts. There's
-      // no on-canvas overlay anymore — board-view tuning + its debounced
-      // /api/config/map persistence both live in the React Display panel.
-      function applyMap() {
-        const m = mapCfgRef.current;
-        tileW = clamp(m.tileWidth, MAP_BOUNDS.tileWidth.min, MAP_BOUNDS.tileWidth.max);
-        ratio = clamp(
-          m.tileHeightRatio,
-          MAP_BOUNDS.tileHeightRatio.min,
-          MAP_BOUNDS.tileHeightRatio.max,
-        );
-        boardScale = clamp(m.scale, MAP_BOUNDS.scale.min, MAP_BOUNDS.scale.max);
-        rotRad = (m.rotation * Math.PI) / 180;
-        rotXRad = (m.rotationX * Math.PI) / 180;
-        rotYRad = (m.rotationY * Math.PI) / 180;
-        relayout();
-      }
       applyMapRef.current = applyMap;
 
       // ---- Playback primitives (all genId/destroyed-aware) ----
@@ -954,7 +869,8 @@ function BattleStage({
         // stay crisp through that upscale (capped to avoid huge glyph textures).
         t.resolution = Math.min(
           4,
-          (window.devicePixelRatio || 1) * Math.max(1, (tileW / TW0) * boardScale),
+          (window.devicePixelRatio || 1) *
+            Math.max(1, (boardLayout.tileW / TW0) * boardLayout.boardScale),
         );
         t.anchor.set(0.5);
         // Parent the number to the unit node (like the HP bar) so it tracks the
@@ -1069,7 +985,7 @@ function BattleStage({
         const proj = new AnimatedSprite(frames);
         proj.anchor.set(0.5);
         proj.loop = sp?.loop ?? true; // false -> frames play once (flight unchanged)
-        const k = (tileW / TW0) * (sp?.scale ?? 1);
+        const k = (boardLayout.tileW / TW0) * (sp?.scale ?? 1);
         proj.scale.set(k, k);
         proj.animationSpeed = (sp?.fps ?? DEFAULT_SPELL_FPS) / TICKER_FPS;
         proj.rotation =
@@ -1150,7 +1066,8 @@ function BattleStage({
           tween(
             ATTACK_MS,
             (p) => {
-              su.node.x = ox + dir * tileW * 0.28 * Math.sin(p * Math.PI);
+              su.node.x =
+                ox + dir * boardLayout.tileW * 0.28 * Math.sin(p * Math.PI);
             },
             myId,
           ),
