@@ -81,7 +81,7 @@ export function createBattleClips(ctx: BattleClipsCtx) {
   }
   // First resolvable frame from an explicit role-map value (Action id or raw
   // animation key) — lets a character whose art is reachable only via the
-  // role map (e.g. knight) still produce a base pose / count as having art.
+  // role map (e.g. a character whose art is only role-mapped) still produce a base pose / count as having art.
   function firstFrameOfMapped(charId: string): any | null {
     const rm = config.roleMaps?.[charId];
     if (!rm) return null;
@@ -126,6 +126,23 @@ export function createBattleClips(ctx: BattleClipsCtx) {
     return out;
   }
 
+  // ---- Sound / Action resolution helpers ----
+  // Resolve a role-map value to an authored Action (Action-id branch only).
+  // Returns the migrated Action (with `steps: any[]`) or undefined.
+  function resolveActionForRole(charId: string, role: BattleEventRole) {
+    const mappedId = config.roleMaps?.[charId]?.[role];
+    if (!mappedId) return undefined;
+    return actionsFor(charId).find((a) => a.id === mappedId);
+  }
+
+  /** Return the `sound` field of the authored Action mapped to this role, or undefined. */
+  function soundForRole(
+    charId: string,
+    role: BattleEventRole,
+  ): string | undefined {
+    return (resolveActionForRole(charId, role) as any)?.sound;
+  }
+
   const clipCache: Record<string, Partial<Record<BattleEventRole, any[]>>> = {};
   function clipForRole(charId: string, role: BattleEventRole): any[] {
     const cc = (clipCache[charId] ??= {});
@@ -138,10 +155,8 @@ export function createBattleClips(ctx: BattleClipsCtx) {
     const mappedId = config.roleMaps?.[charId]?.[role];
 
     // (a) value -> an authored Action id in actions[charId]
-    if (mappedId) {
-      const action = actionsFor(charId).find((a) => a.id === mappedId);
-      if (action) frames = flattenAction(action);
-    }
+    const action = resolveActionForRole(charId, role);
+    if (action) frames = flattenAction(action);
     // (b) value -> a raw animation catalog key (CMS can map a role straight
     //     to an animation; that explicit choice must be played, not inferred)
     if (!frames.length && mappedId) {
@@ -179,5 +194,5 @@ export function createBattleClips(ctx: BattleClipsCtx) {
     return frames;
   }
 
-  return { framesForKey, migrateAction, ownedKeys, basePose, flattenAction, clipForRole };
+  return { framesForKey, migrateAction, ownedKeys, basePose, flattenAction, clipForRole, soundForRole };
 }

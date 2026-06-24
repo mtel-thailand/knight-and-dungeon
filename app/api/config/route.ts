@@ -21,8 +21,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_USER_STATE = {
-  activeCharacter: "knight",
-  characters: [{ id: "knight", name: "Knight" }],
+  activeCharacter: "blue",
+  characters: [
+    { id: "blue", name: "Blue" },
+    { id: "little-green", name: "Little Green" },
+    { id: "big-green", name: "Big Green" },
+  ],
   animationConfigs: {},
   actions: {},
 };

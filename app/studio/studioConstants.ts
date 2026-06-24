@@ -28,4 +28,4 @@ export const GRID = {
 };
 
 /** Offline fallback character used only when the API is unreachable. */
-export const DEFAULT_CHARACTER = { id: "knight", name: "Knight" };
+export const DEFAULT_CHARACTER = { id: "blue", name: "Blue" };

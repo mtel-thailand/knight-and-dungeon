@@ -28,7 +28,7 @@ const isDev = process.env.NODE_ENV !== "production";
  * character. Returns the new catalog row so the studio can hot-load it.
  *
  * The catalog keyspace is GLOBAL, so the key is namespaced by character
- * (`<character>-<name>`, matching the built-in `john-*` kit). Without this a
+ * (`<character>-<name>`, matching the per-character `<character>-*` kit). Without this a
  * bare name like "walk" uploaded for two characters would destructively
  * overwrite the same catalog row + on-disk PNG (neither is version-controlled).
  */

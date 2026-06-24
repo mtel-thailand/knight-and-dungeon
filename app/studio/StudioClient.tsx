@@ -27,6 +27,7 @@ import {
   getHexRowsFromCounts,
   defaultCharConfig,
   assetUrl,
+  playSound,
 } from "./studioHelpers";
 import { createStudioBattlePanel } from "./studioBattlePanel";
 import { createBattleBoard } from "./mock-battle/battleBoard";
@@ -280,6 +281,7 @@ export default function StudioClient() {
         return {
           id: raw.id,
           name: raw.name,
+          sound: raw.sound,
           steps: (raw.animationKeys ?? []).map((key: string) => {
             const def = animations.find((a) => a.configKey === key);
             return {
@@ -718,10 +720,11 @@ export default function StudioClient() {
         actionEditorEl.style.display = "";
       }
 
-      async function previewAction(steps: ActionStep[]) {
+      async function previewAction(steps: ActionStep[], sound?: string) {
         previewCancelled = false;
         isPreviewing = true;
         const myId = ++previewGenId;
+        playSound(sound);
 
         do {
           for (const step of steps) {
@@ -1059,6 +1062,90 @@ export default function StudioClient() {
         controls.appendChild(addAnimRow);
         controls.appendChild(addFreezeRow);
         controls.appendChild(loopRow);
+
+        const soundRow = document.createElement("div");
+        soundRow.className = "ae-add-row";
+
+        const soundLabel = document.createElement("span");
+        soundLabel.style.cssText =
+          "font-size:11px;color:rgba(255,255,255,0.3);flex:1;";
+        soundLabel.textContent = "Sound";
+
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = "audio/*";
+        fileInput.style.display = "none";
+
+        const triggerBtn = document.createElement("button");
+        triggerBtn.className = "ae-add-btn";
+        triggerBtn.textContent = action.sound ? "Replace" : "Upload";
+        triggerBtn.addEventListener("click", () => fileInput.click());
+
+        const filenameSpan = document.createElement("span");
+        filenameSpan.style.cssText =
+          "font-size:11px;color:rgba(255,255,255,0.5);margin:0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;";
+        filenameSpan.textContent = action.sound
+          ? action.sound.split("/").pop() || action.sound
+          : "— none —";
+
+        const previewBtn = document.createElement("button");
+        previewBtn.textContent = "▶";
+        previewBtn.style.cssText =
+          "font-size:10px;padding:1px 4px;cursor:pointer;background:transparent;border:1px solid rgba(255,255,255,0.2);border-radius:3px;color:rgba(255,255,255,0.7);";
+        previewBtn.title = "Play sound";
+        if (!action.sound) previewBtn.style.display = "none";
+        previewBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          playSound(action.sound);
+        });
+
+        const clearBtn = document.createElement("button");
+        clearBtn.textContent = "✕";
+        clearBtn.style.cssText =
+          "font-size:10px;padding:1px 4px;cursor:pointer;background:transparent;border:1px solid rgba(255,255,255,0.2);border-radius:3px;color:rgba(255,255,255,0.7);";
+        clearBtn.title = "Clear sound";
+        if (!action.sound) clearBtn.style.display = "none";
+        clearBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          action.sound = undefined;
+          const acts = getCharacterActions();
+          saveActions(acts.map((a) => (a.id === action.id ? action : a)));
+          renderActionEditor(action);
+        });
+
+        fileInput.addEventListener("change", async () => {
+          const file = fileInput.files?.[0];
+          if (!file) return;
+          triggerBtn.disabled = true;
+          triggerBtn.textContent = "Uploading…";
+          try {
+            const fd = new FormData();
+            fd.append("audio", file);
+            // Scope the stored filename by character so two characters' actions
+            // with the same name (e.g. both "Attack") don't collide on one file.
+            fd.append("name", `${CHARACTER}-${action.id}`);
+            const res = await fetch("/api/audio", { method: "POST", body: fd });
+            const data = await res.json();
+            action.sound = data.sound;
+            const acts = getCharacterActions();
+            saveActions(acts.map((a) => (a.id === action.id ? action : a)));
+            renderActionEditor(action);
+          } catch (err) {
+            console.error("Sound upload failed", err);
+          } finally {
+            triggerBtn.disabled = false;
+            triggerBtn.textContent = action.sound ? "Replace" : "Upload";
+          }
+        });
+
+        soundRow.appendChild(soundLabel);
+        soundRow.appendChild(filenameSpan);
+        soundRow.appendChild(previewBtn);
+        soundRow.appendChild(clearBtn);
+        soundRow.appendChild(fileInput);
+        soundRow.appendChild(triggerBtn);
+        controls.appendChild(soundRow);
+
         actionEditorEl.appendChild(controls);
       }
 
@@ -1607,7 +1694,7 @@ export default function StudioClient() {
             }
             renderActionEditor(action);
             renderActionList();
-            if (action.steps.length > 0) previewAction(action.steps);
+            if (action.steps.length > 0) previewAction(action.steps, action.sound);
           });
         });
       }

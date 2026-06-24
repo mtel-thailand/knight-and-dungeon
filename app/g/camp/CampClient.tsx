@@ -301,6 +301,7 @@ export default function CampClient() {
             <GameScreenShell
               centerBg="/assets/dungeon-bg.png"
               centerVideo="/assets/dungeon-bg.mp4"
+              bgm="/assets/audio/battle-bgm.mp3"
               center={
                 <BattleStage
                   key={waveKey}
@@ -340,7 +341,7 @@ export default function CampClient() {
                 {error ? (
                   <span className="camp-error-text">{error}</span>
                 ) : (
-                  "Your party was defeated."
+                  "you suck, loser"
                 )}
               </div>
               <button className="camp-btn primary" onClick={resetToIdle}>

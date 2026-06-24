@@ -1,6 +1,8 @@
 // Pure helpers for the Animation Studio (no DOM / Pixi / React state).
 
 import type { CharConfigData } from "./studioTypes";
+import { effectiveSfxVolume } from "./audioSettings";
+import { playSfx } from "./sfx";
 
 /** Lowercase, hyphenate, and trim a display name into a stable id slug. */
 export function slugify(name: string, fallback = "character"): string {
@@ -75,6 +77,20 @@ export function isoHex(
  */
 export const assetUrl = (image: string) =>
   image.startsWith("http") ? image : `/assets/${image}`;
+
+/**
+ * Fire-and-forget SFX playback for an Action's `sound`. Resolves the stored
+ * name through assetUrl (Firebase URL or /assets/…) and plays it once. Any
+ * load/autoplay failure is swallowed — sound is non-critical polish. Client-
+ * only by construction: `Audio` is touched lazily at call time, so importing
+ * this in server scope is safe; callers invoke it inside Pixi/DOM effects.
+ */
+export function playSound(sound: string | null | undefined, volume = 1): void {
+  if (!sound) return;
+  const url = assetUrl(sound);
+  const gain = Math.max(0, Math.min(1, volume * effectiveSfxVolume()));
+  playSfx(url, gain);
+}
 
 /** A fresh, identity per-character transform. */
 export const defaultCharConfig = (): CharConfigData => ({

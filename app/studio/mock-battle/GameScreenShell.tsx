@@ -1,3 +1,5 @@
+"use client";
+
 // Portable game-screen shell — no mock-battle deps; intended to move to a
 // shared/`/play` location later.
 //
@@ -9,7 +11,9 @@
 // faintly, intentionally empty for now); `center` is the gameplay field and
 // the visual focus. Styles are co-located in a <style> tag so the component
 // carries over verbatim with no external CSS dependency.
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
+import { effectiveBgmVolume, subscribeAudioSettings } from "@/app/studio/audioSettings";
+import SoundSettings from "./SoundSettings";
 
 type GameScreenShellProps = {
   top?: ReactNode;
@@ -18,6 +22,9 @@ type GameScreenShellProps = {
   centerBg?: string;
   /** Optional looping video backdrop (plays over `centerBg`); muted + playsInline for mobile autoplay. */
   centerVideo?: string;
+  /** Optional looping background-music track (path under /assets). Plays with sound after the
+   *  user gesture that mounts the screen; volume is dialed back so per-action SFX sit on top. */
+  bgm?: string;
   bottom?: ReactNode;
   className?: string;
 };
@@ -27,9 +34,24 @@ export default function GameScreenShell({
   center,
   centerBg,
   centerVideo,
+  bgm,
   bottom,
   className,
 }: GameScreenShellProps) {
+  const bgmRef = useRef<HTMLAudioElement | null>(null);
+  // Drive the BGM element's volume from the shared audio-settings store (default
+  // 20%) and keep it live: re-apply on every settings change and resume playback
+  // in case autoplay needed the prior user gesture.
+  useEffect(() => {
+    const el = bgmRef.current;
+    if (!el) return;
+    const apply = () => {
+      el.volume = effectiveBgmVolume();
+    };
+    apply();
+    void el.play().catch(() => {});
+    return subscribeAudioSettings(apply);
+  }, [bgm]);
   return (
     <div className={className ? `gss-root ${className}` : "gss-root"}>
       <style>{GSS_CSS}</style>
@@ -69,11 +91,15 @@ export default function GameScreenShell({
                 }}
               />
             ) : null}
+            {bgm ? (
+              <audio ref={bgmRef} src={bgm} autoPlay loop preload="auto" />
+            ) : null}
             {centerBg || centerVideo ? <div className="gss-center-scrim" /> : null}
             <div className="gss-center-content">{center}</div>
           </div>
         </div>
         <div className="gss-zone gss-zone-bottom">{bottom}</div>
+        <SoundSettings />
       </div>
     </div>
   );

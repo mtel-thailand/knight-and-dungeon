@@ -112,7 +112,7 @@ export type UnitStats = {
 export type Unit = {
   id: string; // per-battle deterministic id (allocated in createBattle, NOT a module global)
   team: Team;
-  characterId: string; // which roster character (knight | john | ...) — drives sprites/Actions
+  characterId: string; // which roster character (blue | little-green | big-green) — drives sprites/Actions
   hp: number;
   maxHp: number;
   attack: number;

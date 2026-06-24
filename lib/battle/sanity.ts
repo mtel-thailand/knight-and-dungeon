@@ -9,7 +9,7 @@
 import { resolveBattle } from "./engine";
 import type { ResolveRequest, UnitStats } from "./types";
 
-const knightStats: UnitStats = {
+const blueStats: UnitStats = {
   hp: 1000,
   attack: 120,
   defense: 30,
@@ -30,20 +30,20 @@ const enemyStats: UnitStats = {
 // Positions are in the centered axial frame: players on playerRow (r=2),
 // enemies on enemyRow (r=-2). Must be valid hexes or pathing degrades.
 const oneVsOne: ResolveRequest = {
-  players: [{ characterId: "knight", stats: knightStats, position: { q: -1, r: 2 } }],
-  enemies: [{ characterId: "skeleton", stats: enemyStats, position: { q: 1, r: -2 } }],
+  players: [{ characterId: "blue", stats: blueStats, position: { q: -1, r: 2 } }],
+  enemies: [{ characterId: "little-green", stats: enemyStats, position: { q: 1, r: -2 } }],
 };
 
 const threeVsThree: ResolveRequest = {
   players: [
-    { characterId: "knight", stats: knightStats, position: { q: -2, r: 2 } },
-    { characterId: "knight", stats: knightStats, position: { q: -1, r: 2 } },
-    { characterId: "john", stats: { ...knightStats, skills: [] }, position: { q: 0, r: 2 } },
+    { characterId: "blue", stats: blueStats, position: { q: -2, r: 2 } },
+    { characterId: "blue", stats: blueStats, position: { q: -1, r: 2 } },
+    { characterId: "big-green", stats: { ...blueStats, skills: [] }, position: { q: 0, r: 2 } },
   ],
   enemies: [
-    { characterId: "skeleton", stats: enemyStats, position: { q: 0, r: -2 } },
-    { characterId: "skeleton", stats: enemyStats, position: { q: 1, r: -2 } },
-    { characterId: "skeleton", stats: enemyStats, position: { q: 2, r: -2 } },
+    { characterId: "little-green", stats: enemyStats, position: { q: 0, r: -2 } },
+    { characterId: "little-green", stats: enemyStats, position: { q: 1, r: -2 } },
+    { characterId: "little-green", stats: enemyStats, position: { q: 2, r: -2 } },
   ],
 };
 
@@ -52,8 +52,8 @@ const threeVsThree: ResolveRequest = {
 // a different row before it can engage — exercising canEngage / selectEngageTarget
 // and the movement fallback. Asserts that path stays deterministic.
 const sameRowMelee: ResolveRequest = {
-  players: [{ characterId: "knight", stats: knightStats, position: { q: 0, r: 0 } }],
-  enemies: [{ characterId: "skeleton", stats: enemyStats, position: { q: 1, r: 0 } }],
+  players: [{ characterId: "blue", stats: blueStats, position: { q: 0, r: 0 } }],
+  enemies: [{ characterId: "little-green", stats: enemyStats, position: { q: 1, r: 0 } }],
 };
 
 // Spell path: a caster with a ready "attack" spell magic-strikes the nearest enemy
@@ -62,15 +62,15 @@ const sameRowMelee: ResolveRequest = {
 const withSpell: ResolveRequest = {
   players: [
     {
-      characterId: "knight",
-      stats: { ...knightStats, skills: [] },
+      characterId: "blue",
+      stats: { ...blueStats, skills: [] },
       position: { q: -1, r: 2 },
       spells: [
-        { id: "fireball", power: 2, cooldown: 6, type: "attack", animationKey: "john-spell" },
+        { id: "fireball", power: 2, cooldown: 6, type: "attack", animationKey: "blue-spell" },
       ],
     },
   ],
-  enemies: [{ characterId: "skeleton", stats: enemyStats, position: { q: 1, r: -2 } }],
+  enemies: [{ characterId: "little-green", stats: enemyStats, position: { q: 1, r: -2 } }],
 };
 
 function run(label: string, req: ResolveRequest): void {

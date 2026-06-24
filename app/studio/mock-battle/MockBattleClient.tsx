@@ -44,7 +44,7 @@ function clampStats(s: UnitStats): UnitStats {
 
 export type RosterChar = { id: string; name: string };
 
-/** Display name for a character id with no roster entry (e.g. "knight" -> "Knight"). */
+/** Display name for a character id with no roster entry (e.g. "blue" -> "Blue"). */
 function prettifyId(id: string): string {
   return id
     .split(/[-_\s]+/)
@@ -54,7 +54,7 @@ function prettifyId(id: string): string {
 }
 
 /**
- * Playable roster = characters that have seeded battle stats (knight, john, ...).
+ * Playable roster = characters that have seeded battle stats (blue, little-green, ...).
  * Names come from the roster blob when present, else are derived from the id.
  * Falls back to the plain character list if no battle stats are surfaced yet.
  */
@@ -659,6 +659,7 @@ export default function MockBattleClient() {
             <GameScreenShell
               centerBg="/assets/dungeon-bg.png"
               centerVideo="/assets/dungeon-bg.mp4"
+              bgm="/assets/audio/battle-bgm.mp3"
               center={
                 config && result ? (
                   <BattleStage

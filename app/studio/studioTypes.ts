@@ -47,7 +47,7 @@ export type FreezeStep = { type: "freeze"; duration: number };
 export type ActionStep = AnimStep | FreezeStep;
 
 /** A polished, per-character playable motion built from ordered steps. */
-export type Action = { id: string; name: string; steps: ActionStep[] };
+export type Action = { id: string; name: string; steps: ActionStep[]; sound?: string };
 
 /** A stored action as persisted in the user-state blob (pre- or post-migration shape). */
 export type StoredAction = {
@@ -55,6 +55,7 @@ export type StoredAction = {
   name: string;
   steps?: ActionStep[];
   animationKeys?: string[];
+  sound?: string;
 };
 
 /** Per-character transform applied to the previewed sprite. */

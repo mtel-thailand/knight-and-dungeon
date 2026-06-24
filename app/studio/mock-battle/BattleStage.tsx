@@ -21,7 +21,7 @@ import {
   DEFAULT_SPELL_TRANSITION,
   SPELL_FADE_MS,
 } from "@/lib/battle/types";
-import { isoPos, getHexRowsFromCounts, assetUrl } from "../studioHelpers";
+import { isoPos, getHexRowsFromCounts, assetUrl, playSound } from "../studioHelpers";
 import { createBattleClips } from "./battleClips";
 import { createBattleBoard } from "./battleBoard";
 import { Jersey_25 } from "next/font/google";
@@ -346,7 +346,7 @@ function BattleStage({
       }
       // deriveFrom chains: a needed derived key needs its BASE image loaded
       // (framesForKey resolves derived frames from framesByKey[deriveFrom]) —
-      // e.g. john-copy-* -> john-*. Walk the full chain, guarding cycles.
+      // e.g. a "-copy" variant -> its base. Walk the full chain, guarding cycles.
       for (const k of [...neededKeys]) {
         let row = catalogByKey[k];
         const seen = new Set<string>();
@@ -390,6 +390,7 @@ function BattleStage({
         basePose,
         flattenAction,
         clipForRole,
+        soundForRole,
       } = createBattleClips({ config, catalog, framesByKey });
 
       // ---- Board layout (axial -> pixel), centered & fit to canvas ----
@@ -457,7 +458,7 @@ function BattleStage({
       const board = new Container();
       viewport.addChild(board);
       const sprites: Record<string, SpriteUnit> = {};
-      const initialById: Record<string, { q: number; r: number }> = {};
+      const initialById: Record<string, { q: number; r: number; hp: number }> = {};
 
       const grid = new Graphics();
       board.addChild(grid);
@@ -625,7 +626,7 @@ function BattleStage({
         // Paint the bar from the live config now that the SpriteUnit exists
         // (defaults reproduce the original geometry exactly).
         drawHealthBar(sprites[u.id]);
-        initialById[u.id] = { q: u.position.q, r: u.position.r };
+        initialById[u.id] = { q: u.position.q, r: u.position.r, hp: u.hp };
       }
 
       // Apply the loaded view config to the freshly-built units (scale to the live
@@ -710,6 +711,7 @@ function BattleStage({
             res();
           };
           su.body.onComplete = finish;
+          playSound(soundForRole(su.characterId, role));
           su.body.play();
           const safety = setTimeout(finish, durSec * 1000 + 90);
           cleanups.push(() => clearTimeout(safety));
@@ -1090,7 +1092,7 @@ function BattleStage({
           const su = sprites[id];
           const init = initialById[id];
           su.dead = false;
-          su.hp = su.maxHp;
+          su.hp = init.hp;
           su.q = init.q;
           su.r = init.r;
           const p = pixelOf(init.q, init.r);
@@ -1103,8 +1105,9 @@ function BattleStage({
           su.facing = su.team === "enemy" ? -1 : 1; // team default: enemy left, player right
           su.body.scale.x = su.absScale * su.facing; // facing on the BODY, not the node
           su.hpFill.visible = true;
-          su.hpFill.scale.x = 1;
-          su.hpFill.tint = hpColor(1);
+          const hpRatio = Math.max(0.0001, Math.min(1, su.hp / su.maxHp));
+          su.hpFill.scale.x = hpRatio;
+          su.hpFill.tint = hpColor(hpRatio);
           setIdle(su);
         }
       }
