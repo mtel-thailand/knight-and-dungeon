@@ -79,7 +79,7 @@ export default function GameScreenShell({
   );
 }
 
-const GSS_CSS = `
+export const GSS_CSS = `
 .gss-root {
   position: absolute; inset: 0;
   container-type: size;

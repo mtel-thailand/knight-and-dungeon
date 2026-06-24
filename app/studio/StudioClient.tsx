@@ -29,6 +29,7 @@ import {
 } from "./studioHelpers";
 import { createStudioBattlePanel } from "./studioBattlePanel";
 import { createBattleBoard } from "./mock-battle/battleBoard";
+import { GSS_CSS } from "./mock-battle/GameScreenShell";
 import type {
   AnimConfig,
   AnimationRow,
@@ -72,9 +73,58 @@ export default function StudioClient() {
       canvasWrapper.style.cssText = `position: absolute; top: 0; bottom: 0; left: ${DUAL_PANEL_W}; right: ${PANEL_W};`;
       container.appendChild(canvasWrapper);
 
+      // Build the game-screen shell frame inside canvasWrapper: the same 9:19.5
+      // portrait frame + dungeon bg/video/scrim/vignette as the mock-battle game
+      // screen. Pixi renders into the square center field.
+      const gssRoot = canvasWrapper.appendChild(document.createElement("div"));
+      gssRoot.className = "gss-root";
+      const gssFrame = gssRoot.appendChild(document.createElement("div"));
+      gssFrame.className = "gss-frame";
+      gssFrame.appendChild(document.createElement("div")).className = "gss-zone gss-zone-top";
+      const gssCenter = gssFrame.appendChild(document.createElement("div"));
+      gssCenter.className = "gss-center";
+
+      const gssField = gssCenter.appendChild(document.createElement("div"));
+      gssField.className = "gss-center-field";
+      gssField.style.backgroundImage = 'url("/assets/dungeon-bg.png")';
+      gssField.style.backgroundSize = "cover";
+      gssField.style.backgroundPosition = "center";
+      gssField.style.backgroundRepeat = "no-repeat";
+
+      const gssVideo = gssField.appendChild(document.createElement("video"));
+      gssVideo.className = "gss-center-video";
+      gssVideo.src = "/assets/dungeon-bg.mp4";
+      gssVideo.poster = "/assets/dungeon-bg.png";
+      gssVideo.autoplay = true;
+      gssVideo.muted = true;
+      gssVideo.loop = true;
+      gssVideo.playsInline = true;
+      gssVideo.preload = "auto";
+
+      const gssScrim = gssField.appendChild(document.createElement("div"));
+      gssScrim.className = "gss-center-scrim";
+
+      const gssContent = gssField.appendChild(document.createElement("div"));
+      gssContent.className = "gss-center-content";
+
+      // Pixi host fills the square center field (inside gss-center-content).
+      const pixiHost = gssContent.appendChild(document.createElement("div"));
+      pixiHost.style.cssText = "position:absolute; inset:0;";
+
+      gssFrame.appendChild(document.createElement("div")).className = "gss-zone gss-zone-bottom";
+
+      // --- Styles --- Inject BEFORE pixiApp.init so the GSS frame CSS is applied
+      // and pixiHost (absolute inset:0) resolves to the square center field rather
+      // than the wide canvasWrapper, so resizeTo reads the right size on first paint
+      // (without this the board mis-sizes until a window resize fires).
+      const styleTag = document.createElement("style");
+      injectedStyle = styleTag;
+      styleTag.textContent = STUDIO_CSS + "\n" + GSS_CSS;
+      document.head.appendChild(styleTag);
+
       pixiApp = new Application();
       await pixiApp.init({
-        resizeTo: canvasWrapper,
+        resizeTo: pixiHost,
         backgroundAlpha: 0,
         antialias: true,
       });
@@ -84,7 +134,7 @@ export default function StudioClient() {
         return;
       }
 
-      canvasWrapper.appendChild(pixiApp.canvas);
+      pixiHost.appendChild(pixiApp.canvas);
 
       // Bootstrap everything from the SQLite-backed API in one request: mutable
       // user state + the animation catalog (manifest + spritesheet frame data)
@@ -418,7 +468,8 @@ export default function StudioClient() {
       const mapOverlay = document.createElement("div");
       mapOverlay.className = "map-overlay";
       mapOverlay.appendChild(tileSelect);
-      canvasWrapper.appendChild(mapOverlay);
+      // Overlay the center field (above the scrim via z-index).
+      gssField.appendChild(mapOverlay);
 
       // Paint the first sprite and apply board layout
       applyAnimation(currentIndex);
@@ -427,10 +478,10 @@ export default function StudioClient() {
       // Empty-state hint shown on the canvas when there is no active character.
       const emptyHint = document.createElement("div");
       emptyHint.style.cssText =
-        "position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 24px; color:rgba(255,255,255,0.38); font-family:system-ui,sans-serif; font-size:14px; pointer-events:none;";
+        "position:absolute; inset:0; z-index:5; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 24px; color:rgba(255,255,255,0.38); font-family:system-ui,sans-serif; font-size:14px; pointer-events:none;";
       emptyHint.textContent =
         "No character yet — add one in the left panel to begin.";
-      canvasWrapper.appendChild(emptyHint);
+      gssField.appendChild(emptyHint);
       function updateEmptyHint() {
         const has = !!CHARACTER;
         emptyHint.style.display = has ? "none" : "flex";
@@ -479,12 +530,6 @@ export default function StudioClient() {
         centerBoard();
       };
       window.addEventListener("resize", resizeHandler);
-
-      // --- Styles ---
-      const styleTag = document.createElement("style");
-      injectedStyle = styleTag;
-      styleTag.textContent = STUDIO_CSS;
-      document.head.appendChild(styleTag);
 
       // --- Right panel (Playback Settings / Action Editor) ---
       const panel = document.createElement("div");
