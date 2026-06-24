@@ -2,8 +2,8 @@
 
 // /studio/spells/[id] — EDIT page for one global spell.
 // Loads the spell + the animation catalog from GET /api/config (spell found by
-// the route id). A <canvas> preview plays the spell's animation on a tiny
-// mock-battle-like iso strip, driven live by the playback config (FPS / Scale /
+// the route id). A <canvas> preview plays the spell's animation on a mock-
+// battle-like hex board, driven live by the playback config (FPS / Scale /
 // Loop). Edits Name / Power / Cooldown / the
 // playback config locally, then Save → POST /api/config/spell { spell }. The
 // animation itself is set ONLY by uploading an MP4 ("Convert & assign" →
@@ -22,7 +22,7 @@ import {
   DEFAULT_SPELL_FPS,
   DEFAULT_SPELL_DURATION,
 } from "@/lib/battle/types";
-import { isoHex, isoPos } from "../../studioHelpers";
+import { getHexRowsFromCounts, isoHex, isoPos } from "../../studioHelpers";
 import type { BootstrapPayload, CatalogEntry } from "../../studioTypes";
 import { SPELLS_PAGE_CSS } from "../spellsStyles";
 
@@ -59,8 +59,13 @@ type FrameRect = { x: number; y: number; w: number; h: number };
 /** A spell's animation loaded and ready to play on the preview canvas. */
 type LoadedSheet = { img: HTMLImageElement; frames: FrameRect[] };
 
-const PREVIEW_BOARD_QS = [-1, 0, 1] as const;
-const PREVIEW_BOARD_R = BOARD.playerRow;
+const PREVIEW_ROWS = getHexRowsFromCounts([...BOARD.rowCounts]);
+const PREVIEW_HEXES = PREVIEW_ROWS.flatMap((cols, ri) => {
+  const r = ri - (PREVIEW_ROWS.length - 1) / 2;
+  return cols.map((q) => ({ q, r }));
+});
+const PREVIEW_SWEEP_ROW = PREVIEW_ROWS[Math.floor(PREVIEW_ROWS.length / 2)] ?? [];
+const PREVIEW_SWEEP_R = 0;
 const BOARD_REF_SIDE = 640;
 const BOTTOM_INSET = 8;
 
@@ -168,9 +173,9 @@ export default function SpellEditPage() {
     : null;
   const canPreview = !!(previewEntry && previewEntry.image && previewEntry.frameData);
 
-  // Demo the spell on a tiny mock-battle-like iso strip: one row, three tiles,
-  // with the spell sprite traveling from the first tile to the last while the
-  // board uses the same iso geometry + view transform as the battle board.
+  // Demo the spell on the full mock-battle-like [5,6,7,6,5] board; the spell
+  // sweeps across the wide middle row while the board uses the same iso
+  // geometry + view transform as the battle board.
   // `loop` still governs only the FRAMES (on → cycle while flying; off → play
   // once then hold the last frame); the flight itself always repeats. Re-runs
   // (and cancels the rAF) whenever the sheet, knobs, field size, or map config
@@ -254,7 +259,7 @@ export default function SpellEditPage() {
     const viewScaleY = boardScale * fitScale * Math.cos(rotXRad);
     const rotOffRad = (rotDeg * Math.PI) / 180;
 
-    const hexes = PREVIEW_BOARD_QS.map((q) => ({ q, r: PREVIEW_BOARD_R }));
+    const hexes = PREVIEW_HEXES;
     const hw = tileW / 2;
     const hh = tileH / 2;
     let minX = Infinity,
@@ -279,12 +284,6 @@ export default function SpellEditPage() {
       Math.cos(rotXRad);
     const originX = previewSide / 2;
     const originY = previewSide - BOTTOM_INSET - bottomDrop;
-    const tileFill =
-      PREVIEW_BOARD_R === BOARD.playerRow
-        ? "rgba(22,58,74,0.55)"
-        : PREVIEW_BOARD_R === BOARD.enemyRow
-          ? "rgba(70,32,46,0.55)"
-          : "rgba(26,32,48,0.55)";
 
     const project = (pt: { x: number; y: number }) => {
       const local = transformPoint(pt.x - pivotX, pt.y - pivotY, rotRad, viewScaleX, viewScaleY);
@@ -293,10 +292,18 @@ export default function SpellEditPage() {
 
     const boardPolys = hexes.map((h) => {
       const p = isoPos(h.q, h.r, tileW, tileH);
-      return isoHex(p.x, p.y, tileW * 0.94, tileH * 0.94);
+      return {
+        r: h.r,
+        points: isoHex(p.x, p.y, tileW * 0.94, tileH * 0.94),
+      };
     });
-    const startLocal = isoPos(PREVIEW_BOARD_QS[0], PREVIEW_BOARD_R, tileW, tileH);
-    const endLocal = isoPos(PREVIEW_BOARD_QS[2], PREVIEW_BOARD_R, tileW, tileH);
+    const startLocal = isoPos(PREVIEW_SWEEP_ROW[0], PREVIEW_SWEEP_R, tileW, tileH);
+    const endLocal = isoPos(
+      PREVIEW_SWEEP_ROW[PREVIEW_SWEEP_ROW.length - 1],
+      PREVIEW_SWEEP_R,
+      tileW,
+      tileH,
+    );
     const start = project(startLocal);
     const end = project(endLocal);
     const shiftX = offX;
@@ -306,9 +313,10 @@ export default function SpellEditPage() {
     const travelAngle =
       Math.atan2(lineEnd.y - lineStart.y, lineEnd.x - lineStart.x) + rotOffRad;
     const boardScaleFactor =
-      scale * boardScale * fitScale * (tileW / DEFAULT_MAP.tileWidth);
+      Math.abs(scale) * boardScale * fitScale * (tileW / DEFAULT_MAP.tileWidth);
     const spriteScaleX = boardScaleFactor / Math.cos(rotYRad);
     const spriteScaleY = boardScaleFactor / Math.cos(rotXRad);
+    const spriteFlip = scale < 0 ? -1 : 1;
 
     const dpr = window.devicePixelRatio || 1;
     cv.width = Math.max(1, Math.round(previewSide * dpr));
@@ -335,12 +343,17 @@ export default function SpellEditPage() {
       ctx.translate(-pivotX, -pivotY);
       for (const poly of boardPolys) {
         ctx.beginPath();
-        poly.forEach(([x, y], idx) => {
+        poly.points.forEach(([x, y], idx) => {
           if (idx === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         });
         ctx.closePath();
-        ctx.fillStyle = tileFill;
+        ctx.fillStyle =
+          poly.r === BOARD.playerRow
+            ? "rgba(22,58,74,0.55)"
+            : poly.r === BOARD.enemyRow
+              ? "rgba(70,32,46,0.55)"
+              : "rgba(26,32,48,0.55)";
         ctx.strokeStyle = "rgba(111,183,214,0.2)";
         ctx.lineWidth = 1.5;
         ctx.fill();
@@ -376,6 +389,7 @@ export default function SpellEditPage() {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(travelAngle);
+      ctx.scale(spriteFlip, spriteFlip);
       ctx.drawImage(img, f.x, f.y, f.w, f.h, -dw / 2, -dh / 2, dw, dh);
       ctx.restore();
     };
