@@ -1,88 +1,341 @@
 /* ------------------------------------------------------------------ *
- * Camp page styles — minimal/functional for P4/P5; designer polishes
- * in P6. Scoped under .camp-page to coexist with other routes.
+ * Camp page styles — dungeon dark, game-feel polish. Scoped under
+ * .camp-page to coexist with other routes. Cinzel display headings
+ * for fantasy tone; system-ui body for legibility.
  * ------------------------------------------------------------------ */
 export const CAMP_PAGE_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&display=swap');
+
 .camp-page {
   display: flex; flex-direction: column;
   width: 100vw; height: 100vh;
-  font-family: system-ui, sans-serif; color: #e8e8f0;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: #e2e4ec;
   background:
-    radial-gradient(1200px 700px at 50% -10%, rgba(56,224,196,0.06), transparent 60%),
-    radial-gradient(1000px 600px at 50% 110%, rgba(255,93,115,0.06), transparent 60%),
-    #0a0a0f;
+    radial-gradient(1200px 700px at 50% -10%, rgba(56,224,196,0.07), transparent 60%),
+    radial-gradient(1000px 600px at 50% 110%, rgba(255,93,115,0.07), transparent 60%),
+    linear-gradient(180deg, #0a0b12 0%, #0d0e18 50%, #080911 100%);
 }
 
 .camp-body {
   flex: 1; position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
 }
 
-/* Center message (loading, error, result) */
+/* ── Loading / center messages ─────────────────────────────────────── */
+
 .camp-center-msg {
-  position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  text-align: center; gap: 10px;
-  color: rgba(255,255,255,0.5); font-size: 15px; line-height: 1.6; padding: 0 24px;
+  gap: 12px; text-align: center;
+  color: rgba(255,255,255,0.4);
+  font-size: 14px; line-height: 1.5; padding: 24px;
 }
-.camp-center-msg a { color: #38e0c4; }
-.camp-center-msg h1 { font-size: 22px; font-weight: 700; margin: 0; color: #e8e8f0; }
 
-/* Idle screen — campaign title + start button */
-.camp-idle { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
-.camp-idle h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
-.camp-idle p { font-size: 13px; color: rgba(255,255,255,0.5); margin: 0; }
+.camp-spinner {
+  width: 26px; height: 26px;
+  border: 2px solid rgba(56,224,196,0.1);
+  border-top-color: #38e0c4;
+  border-radius: 50%;
+  animation: camp-spin 0.7s linear infinite;
+}
+
+/* ── Idle screen — campaign launch ─────────────────────────────────── */
+
+.camp-idle {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px; text-align: center;
+  padding: 40px 24px;
+  max-width: 380px;
+  width: 100%;
+}
+
+.camp-idle-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(56,224,196,0.55);
+  background: rgba(56,224,196,0.06);
+  padding: 4px 12px; border-radius: 20px;
+  border: 1px solid rgba(56,224,196,0.09);
+  margin-bottom: 6px;
+}
+
+.camp-idle-title {
+  font-family: 'Cinzel', serif;
+  font-size: 30px; font-weight: 700;
+  line-height: 1.15; letter-spacing: 0.02em;
+  margin: 0;
+  color: #edf0f5;
+  text-shadow: 0 0 40px rgba(56,224,196,0.1);
+}
+
+.camp-idle-sub {
+  font-size: 13px; color: rgba(255,255,255,0.28); margin: 0 0 2px;
+  font-style: italic;
+}
+
+.camp-idle-stats {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 20px;
+  font-size: 13px; color: rgba(255,255,255,0.4);
+}
+
+.camp-stat-dot {
+  width: 3px; height: 3px; border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+}
+
+/* ── Start campaign button ─────────────────────────────────────────── */
+
 .camp-start-btn {
-  padding: 14px 36px; border-radius: 12px; cursor: pointer;
-  font-size: 15px; font-weight: 700; letter-spacing: 0.02em; color: #04140f;
+  padding: 14px 40px; border-radius: 12px; cursor: pointer;
+  font-size: 15px; font-weight: 700; font-family: inherit;
+  letter-spacing: 0.02em;
+  color: #04140f;
   background: linear-gradient(180deg, #46eccf, #2bbfa6);
-  border: 1px solid rgba(56,224,196,0.6);
-  box-shadow: 0 8px 24px rgba(43,191,166,0.28);
-  transition: transform 0.1s, box-shadow 0.15s, opacity 0.15s;
+  border: none;
+  box-shadow:
+    0 8px 24px rgba(43,191,166,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+  transition: transform 0.1s, box-shadow 0.15s;
 }
-.camp-start-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(43,191,166,0.4); }
-.camp-start-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
-
-/* Guard message */
-.camp-guard { text-align: center; max-width: 360px; }
-.camp-guard .icon { font-size: 32px; margin-bottom: 4px; }
-
-/* HUD overlay during fight */
-.camp-hud {
-  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-  z-index: 6; pointer-events: none;
-  font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
-  color: rgba(255,255,255,0.55);
-  background: rgba(10,12,18,0.7); padding: 5px 14px; border-radius: 20px;
-  backdrop-filter: blur(8px);
+.camp-start-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 30px rgba(43,191,166,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.camp-start-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.camp-start-btn:disabled {
+  opacity: 0.35; cursor: not-allowed; box-shadow: none;
 }
 
-/* Result screen (won/lost) */
-.camp-result-scrim {
-  position: absolute; inset: 0; z-index: 10;
+/* ── Guard (empty state — no campaign / no monsters / no party) ── */
+
+.camp-guard {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 12px;
+  text-align: center;
+  max-width: 320px;
+  color: rgba(255,255,255,0.4);
+  font-size: 14px; line-height: 1.6;
+}
+
+.camp-guard-icon {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
   display: flex; align-items: center; justify-content: center;
-  background: rgba(5,6,10,0.55); backdrop-filter: blur(4px);
-  animation: camp-fade 0.25s ease both;
+  margin-bottom: 2px;
 }
-.camp-result-card {
-  text-align: center; padding: 34px 44px; border-radius: 18px;
-  background: rgba(16,17,24,0.92); border: 1px solid rgba(255,255,255,0.1);
-  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
-  animation: camp-pop 0.32s cubic-bezier(0.2,0.9,0.3,1.3) both;
+.camp-guard-icon::after {
+  content: '!';
+  font-size: 18px; font-weight: 700;
+  color: rgba(255,255,255,0.22);
+  line-height: 1;
 }
-.camp-result-title { font-size: 40px; font-weight: 800; letter-spacing: 0.01em; margin-bottom: 6px; }
-.camp-result-card.won .camp-result-title { color: #57e08a; text-shadow: 0 0 30px rgba(87,224,138,0.4); }
-.camp-result-card.lost .camp-result-title { color: #ff5d73; text-shadow: 0 0 30px rgba(255,93,115,0.4); }
-.camp-result-sub { font-size: 13px; color: rgba(255,255,255,0.55); margin-bottom: 22px; }
-.camp-btn {
-  padding: 11px 20px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600;
-  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #e8e8f0;
-  transition: background 0.12s, border-color 0.12s;
-}
-.camp-btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); }
-.camp-btn.primary { background: linear-gradient(180deg, #46eccf, #2bbfa6); color: #04140f; border-color: rgba(56,224,196,0.6); }
-.camp-btn.primary:hover { box-shadow: 0 6px 18px rgba(43,191,166,0.35); }
 
-@keyframes camp-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes camp-pop { from { opacity: 0; transform: scale(0.92) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.camp-guard a {
+  color: #38e0c4; text-decoration: none;
+  font-weight: 600; font-size: 13px;
+}
+.camp-guard a:hover { text-decoration: underline; }
+
+/* ── Fight area (wraps GameScreenShell + HUD overlay) ────────────── */
+
+.camp-fight-area {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+}
+
+/* HUD — wave counter pill, top of the frame */
+.camp-hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  z-index: 40; pointer-events: none;
+  display: flex; justify-content: center;
+  padding: 10px 16px 0;
+}
+
+.camp-hud-inner {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(8,10,16,0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255,255,255,0.05);
+  padding: 5px 14px; border-radius: 20px;
+  color: rgba(255,255,255,0.45);
+}
+
+.camp-hud-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(255,255,255,0.25);
+}
+
+.camp-hud-value {
+  font-family: 'Cinzel', serif;
+  font-size: 15px; font-weight: 700;
+  color: #e8ecf5;
+}
+
+.camp-hud-divider {
+  color: rgba(255,255,255,0.12);
+  font-size: 12px;
+}
+
+.camp-hud-total {
+  font-size: 12px; color: rgba(255,255,255,0.3);
+}
+
+/* ── Result screen — victory / defeat ──────────────────────────────── */
+
+.camp-result-scrim {
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(5,6,12,0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: camp-fade 0.3s ease both;
+}
+
+.camp-result-card {
+  position: relative;
+  text-align: center;
+  padding: 36px 44px;
+  border-radius: 20px;
+  background: rgba(14,16,24,0.94);
+  border: 1px solid rgba(255,255,255,0.055);
+  box-shadow: 0 32px 80px rgba(0,0,0,0.55);
+  animation: camp-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  max-width: 300px;
+  overflow: hidden;
+}
+
+.camp-result-glow {
+  position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+  pointer-events: none; z-index: 0;
+}
+.camp-result-card.won .camp-result-glow {
+  background: radial-gradient(ellipse at 50% 30%, rgba(87,224,138,0.07), transparent 60%);
+}
+.camp-result-card.lost .camp-result-glow {
+  background: radial-gradient(ellipse at 50% 30%, rgba(255,93,115,0.07), transparent 60%);
+}
+
+.camp-result-icon {
+  position: relative; z-index: 1;
+  width: 44px; height: 44px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.camp-result-card.won .camp-result-icon {
+  background: rgba(87,224,138,0.08);
+  border: 1px solid rgba(87,224,138,0.16);
+}
+/* checkmark via border trick */
+.camp-result-card.won .camp-result-icon::after {
+  content: '';
+  width: 14px; height: 8px;
+  border-left: 2.5px solid #57e08a;
+  border-bottom: 2.5px solid #57e08a;
+  transform: rotate(-45deg) translate(1px, -1px);
+  margin-top: -3px;
+}
+.camp-result-card.lost .camp-result-icon {
+  background: rgba(255,93,115,0.08);
+  border: 1px solid rgba(255,93,115,0.16);
+}
+/* cross via two rotated pseudo bars */
+.camp-result-card.lost .camp-result-icon::before,
+.camp-result-card.lost .camp-result-icon::after {
+  content: '';
+  position: absolute;
+  width: 18px; height: 2.5px;
+  background: #ff5d73;
+  border-radius: 1px;
+}
+.camp-result-card.lost .camp-result-icon::before {
+  transform: rotate(45deg);
+}
+.camp-result-card.lost .camp-result-icon::after {
+  transform: rotate(-45deg);
+}
+
+.camp-result-title {
+  position: relative; z-index: 1;
+  font-family: 'Cinzel', serif;
+  font-size: 34px; font-weight: 700;
+  letter-spacing: 0.03em;
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+.camp-result-card.won .camp-result-title {
+  color: #57e08a;
+  text-shadow: 0 0 40px rgba(87,224,138,0.28);
+}
+.camp-result-card.lost .camp-result-title {
+  color: #ff5d73;
+  text-shadow: 0 0 40px rgba(255,93,115,0.28);
+}
+
+.camp-result-sub {
+  position: relative; z-index: 1;
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 24px;
+  line-height: 1.5;
+  max-width: 220px;
+  margin-left: auto; margin-right: auto;
+}
+
+.camp-error-text {
+  color: #ffb3bd;
+  display: block;
+}
+
+/* ── Reusable buttons ──────────────────────────────────────────────── */
+
+.camp-btn {
+  position: relative; z-index: 1;
+  display: inline-flex; align-items: center;
+  padding: 11px 24px; border-radius: 10px; cursor: pointer;
+  font-size: 13px; font-weight: 600; font-family: inherit;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #e2e4ec;
+  transition: background 0.12s, border-color 0.12s, transform 0.1s;
+}
+.camp-btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.18); }
+.camp-btn:active { transform: scale(0.98); }
+.camp-btn.primary {
+  background: linear-gradient(180deg, #46eccf, #2bbfa6);
+  color: #04140f;
+  border: none;
+  font-weight: 700;
+  box-shadow:
+    0 4px 14px rgba(43,191,166,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.camp-btn.primary:hover {
+  box-shadow:
+    0 6px 20px rgba(43,191,166,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+/* ── Animations ────────────────────────────────────────────────────── */
+
+@keyframes camp-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes camp-pop {
+  from { opacity: 0; transform: scale(0.92) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes camp-spin {
+  to { transform: rotate(360deg); }
+}
 `;

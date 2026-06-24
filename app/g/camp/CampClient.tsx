@@ -241,7 +241,10 @@ export default function CampClient() {
       <div className="camp-page">
         <style>{CAMP_PAGE_CSS}</style>
         <div className="camp-body">
-          <div className="camp-center-msg">Loading…</div>
+          <div className="camp-center-msg">
+            <div className="camp-spinner" />
+            <span>Loading…</span>
+          </div>
         </div>
       </div>
     );
@@ -252,10 +255,15 @@ export default function CampClient() {
       <style>{CAMP_PAGE_CSS}</style>
       <div className="camp-body">
         {phase === "fighting" && config && result ? (
-          <>
+          <div className="camp-fight-area">
             {/* Wave HUD */}
             <div className="camp-hud">
-              Wave {waveIndex} / {activeCampaign?.waveCount ?? "?"}
+              <div className="camp-hud-inner">
+                <span className="camp-hud-label">Wave</span>
+                <span className="camp-hud-value">{waveIndex}</span>
+                <span className="camp-hud-divider">/</span>
+                <span className="camp-hud-total">{activeCampaign?.waveCount ?? "?"}</span>
+              </div>
             </div>
 
             <GameScreenShell
@@ -272,12 +280,17 @@ export default function CampClient() {
                 />
               }
             />
-          </>
+          </div>
         ) : phase === "fighting" ? (
-          <div className="camp-center-msg">Loading battle…</div>
+          <div className="camp-center-msg">
+            <div className="camp-spinner" />
+            <span>Loading battle…</span>
+          </div>
         ) : phase === "won" ? (
           <div className="camp-result-scrim">
             <div className="camp-result-card won">
+              <div className="camp-result-glow" />
+              <div className="camp-result-icon" />
               <div className="camp-result-title">Victory</div>
               <div className="camp-result-sub">All waves cleared!</div>
               <button className="camp-btn primary" onClick={resetToIdle}>
@@ -288,10 +301,12 @@ export default function CampClient() {
         ) : phase === "lost" ? (
           <div className="camp-result-scrim">
             <div className="camp-result-card lost">
+              <div className="camp-result-glow" />
+              <div className="camp-result-icon" />
               <div className="camp-result-title">Defeat</div>
               <div className="camp-result-sub">
                 {error ? (
-                  <span style={{ color: "#ffb3bd" }}>{error}</span>
+                  <span className="camp-error-text">{error}</span>
                 ) : (
                   "Your party was defeated."
                 )}
@@ -306,21 +321,25 @@ export default function CampClient() {
           <div className="camp-idle">
             {guardMessage ? (
               <div className="camp-guard">
-                <div className="icon">⚠️</div>
+                <div className="camp-guard-icon" />
                 <p>{guardMessage}</p>
-                <p>
-                  <a href="/studio/campaigns">Go to Campaigns</a>
-                </p>
+                <a href="/studio/campaigns">Go to Campaigns</a>
               </div>
             ) : (
               <>
-                <h1>{activeCampaign?.name ?? "Campaign"}</h1>
-                <p>
-                  {activeCampaign?.waveCount ?? 0} wave
-                  {(activeCampaign?.waveCount ?? 0) !== 1 ? "s" : ""}
-                  {" · "}
-                  {playerParty.length} fighter{playerParty.length !== 1 ? "s" : ""}
-                </p>
+                <div className="camp-idle-badge">Campaign</div>
+                <h1 className="camp-idle-title">{activeCampaign?.name ?? "Campaign"}</h1>
+                <p className="camp-idle-sub">Auto-battle dungeon run</p>
+                <div className="camp-idle-stats">
+                  <span>
+                    {activeCampaign?.waveCount ?? 0} wave
+                    {(activeCampaign?.waveCount ?? 0) !== 1 ? "s" : ""}
+                  </span>
+                  <span className="camp-stat-dot" />
+                  <span>
+                    {playerParty.length} fighter{playerParty.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
                 <button className="camp-start-btn" onClick={startCampaign}>
                   Start campaign
                 </button>

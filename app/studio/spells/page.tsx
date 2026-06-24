@@ -112,6 +112,9 @@ export default function SpellsListPage() {
         <Link className="menu-bar-item" href="/studio/mock-battle">
           Mock Battle
         </Link>
+        <Link className="menu-bar-item" href="/g/camp">
+          Play
+        </Link>
       </nav>
 
       <div className="spells-wrap">

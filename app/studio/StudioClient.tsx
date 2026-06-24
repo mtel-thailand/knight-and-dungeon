@@ -2139,6 +2139,9 @@ export default function StudioClient() {
         <a className="menu-bar-item" href="/studio/mock-battle">
           Mock Battle
         </a>
+        <a className="menu-bar-item" href="/g/camp">
+          Play
+        </a>
       </nav>
       <div
         ref={containerRef}

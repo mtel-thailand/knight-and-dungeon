@@ -116,6 +116,9 @@ export default function CampaignsListPage() {
         <Link className="menu-bar-item" href="/studio/mock-battle">
           Mock Battle
         </Link>
+        <Link className="menu-bar-item" href="/g/camp">
+          Play
+        </Link>
       </nav>
 
       <div className="campaigns-wrap">
@@ -198,6 +201,11 @@ export default function CampaignsListPage() {
                 >
                   {c.isActive ? "Active" : "Set active"}
                 </button>
+                {c.isActive ? (
+                  <Link className="campaign-btn" href="/g/camp">
+                    ▶ Play
+                  </Link>
+                ) : null}
                 <button
                   className="campaign-btn danger"
                   onClick={() => removeCampaign(c.id)}
