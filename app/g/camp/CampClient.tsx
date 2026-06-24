@@ -107,8 +107,6 @@ export default function CampClient() {
     return null;
   })();
 
-  const canStart = phase === "idle" && !loading && guardMessage === null;
-
   // ── Wave resolution ────────────────────────────────────────────────────
 
   async function runWave(k: number, party: PartyMemberInput[]): Promise<"ok" | string> {
@@ -195,12 +193,25 @@ export default function CampClient() {
   // ── Start campaign ─────────────────────────────────────────────────────
 
   function startCampaign() {
-    if (!canStart || !activeCampaign) return;
+    // Gate on the always-current refs (NOT the render-derived `canStart`): even a
+    // stale handler closure reads the newest committed values through the shared
+    // ref objects, and every early-return now surfaces a reason — so the start can
+    // never silently no-op.
+    const cfg = configRef.current;
+    const camp = activeCampaignRef.current;
+    const party = playerPartyRef.current;
+    if (!cfg || !camp) {
+      setError("No active campaign — create and activate one in the Campaigns page.");
+      return;
+    }
+    if (party.length === 0) {
+      setError("No playable characters with battle stats.");
+      return;
+    }
+    setError(null);
     setPhase("fighting");
     setWaveIndex(1);
-    const initialParty = playerPartyRef.current;
-    setError(null);
-    runWave(1, initialParty).then((res) => {
+    runWave(1, party).then((res) => {
       if (res !== "ok") {
         setError(typeof res === "string" ? res : "Failed to start campaign");
         setPhase("idle");
@@ -343,6 +354,7 @@ export default function CampClient() {
                 <button className="camp-start-btn" onClick={startCampaign}>
                   Start campaign
                 </button>
+                {error ? <p className="camp-error-text">{error}</p> : null}
               </>
             )}
           </div>

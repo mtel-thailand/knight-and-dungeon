@@ -90,6 +90,12 @@ function useReplayRefs(config: {
 }) {
   const dmgCfgRef = useRef<DamageCfg>(config.damageConfig ?? DEFAULT_DAMAGE_CONFIG);
   const mapCfgRef = useRef<MapConfig>(config.mapConfig ?? DEFAULT_MAP);
+  // useRef's initializer runs only on the FIRST render — when a camp caller may
+  // still be passing an empty/loading config — so keep these IN-value refs synced
+  // to the latest config every render. Without this the stage would render the
+  // board with DEFAULT map/damage config instead of the persisted one.
+  dmgCfgRef.current = config.damageConfig ?? DEFAULT_DAMAGE_CONFIG;
+  mapCfgRef.current = config.mapConfig ?? DEFAULT_MAP;
   const showGridRef = useRef(false);
   const controlsRef = useRef<{ replay: () => void } | null>(null);
   // OUT mutators: inert no-ops for non-studio callers (camp never needs to
