@@ -64,8 +64,6 @@ const PREVIEW_HEXES = PREVIEW_ROWS.flatMap((cols, ri) => {
   const r = ri - (PREVIEW_ROWS.length - 1) / 2;
   return cols.map((q) => ({ q, r }));
 });
-const PREVIEW_SWEEP_ROW = PREVIEW_ROWS[Math.floor(PREVIEW_ROWS.length / 2)] ?? [];
-const PREVIEW_SWEEP_R = 0;
 const BOARD_REF_SIDE = 640;
 const BOTTOM_INSET = 8;
 
@@ -302,13 +300,8 @@ export default function SpellEditPage() {
         points: isoHex(p.x, p.y, tileW * 0.94, tileH * 0.94),
       };
     });
-    const casterLocal = isoPos(PREVIEW_SWEEP_ROW[0], PREVIEW_SWEEP_R, tileW, tileH);
-    const targetLocal = isoPos(
-      PREVIEW_SWEEP_ROW[PREVIEW_SWEEP_ROW.length - 1],
-      PREVIEW_SWEEP_R,
-      tileW,
-      tileH,
-    );
+    const casterLocal = isoPos(0, BOARD.playerRow, tileW, tileH);
+    const targetLocal = isoPos(0, BOARD.enemyRow, tileW, tileH);
     const casterPos = project(casterLocal);
     const targetPos = project(targetLocal);
     const shiftX = offX;
@@ -413,6 +406,8 @@ export default function SpellEditPage() {
       ctx.fill();
       ctx.restore();
     };
+    const casterFacing = ((Math.sign(targetPos.x - casterPos.x) || 1) as 1 | -1);
+    const targetFacing: 1 | -1 = casterFacing === 1 ? -1 : 1;
 
     const FLIGHT_MS = duration * 1000; // one pass — the spell's Flight (s), in ms
     const GAP_MS = 220; // brief pause (impact) before the flight repeats
@@ -455,8 +450,8 @@ export default function SpellEditPage() {
     const render = (t: number) => {
       ctx.clearRect(0, 0, previewSide, previewSide);
       drawBoard();
-      drawMockUnit(casterPos, "player", 1);
-      drawMockUnit(targetPos, "enemy", -1);
+      drawMockUnit(casterPos, "player", casterFacing);
+      drawMockUnit(targetPos, "enemy", targetFacing);
       const impactPulse = t >= FLIGHT_MS ? Math.max(0, 1 - (t - FLIGHT_MS) / 120) : 0;
       if (t < FLIGHT_MS) {
         const e = easeInOutQuad(t / FLIGHT_MS);
