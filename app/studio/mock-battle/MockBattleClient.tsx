@@ -46,7 +46,6 @@ const ATTACK_MS = 220;
 const HIT_MS = 180;
 const DEATH_MS = 260;
 const KNOCKBACK_MS = 200;
-const SPELL_FLIGHT_MS = 360; // projectile travel time, caster -> target
 const HPBAR_MS = 180;
 const INTER_BEAT_MS = 80; // breathing room between equal-`t` beats
 
@@ -938,8 +937,8 @@ function BattleStage({
       }
 
       // A spell projectile: an AnimatedSprite that flies caster -> target along a
-      // straight line over SPELL_FLIGHT_MS, then destroys itself. Empty frames (no
-      // projectile art) -> just wait the span so impact still lands on arrival.
+      // straight line, then destroys itself. Empty frames (no projectile art) ->
+      // just wait the span so impact still lands on arrival.
       function flyProjectile(
         spellId: string,
         from: HexPosition,
@@ -958,28 +957,37 @@ function BattleStage({
         const a = { x: pa.x + offX, y: pa.y + offY };
         const b = { x: pb.x + offX, y: pb.y + offY };
         if (!frames.length) return wait(flightMs); // no art -> preserve timing
+        const k = boardLayout.tileW / TW0;
+        const isx = 1 / Math.cos(boardLayout.rotYRad);
+        const isy = 1 / Math.cos(boardLayout.rotXRad);
+        const billboard = new Container();
+        billboard.rotation = -boardLayout.rotRad;
+        billboard.scale.set(isx, isy);
+        billboard.position.set(a.x, a.y);
+        billboard.zIndex = 9999;
+
         const proj = new AnimatedSprite(frames);
         proj.anchor.set(0.5);
         proj.loop = sp?.loop ?? true; // false -> frames play once (flight unchanged)
-        const k = boardLayout.tileW / TW0;
         proj.scale.set(k * (sp?.scaleX ?? 1), k * (sp?.scaleY ?? 1));
         proj.animationSpeed = (sp?.fps ?? DEFAULT_SPELL_FPS) / TICKER_FPS;
         proj.rotation =
-          Math.atan2(b.y - a.y, b.x - a.x) + ((sp?.rotation ?? 0) * Math.PI) / 180;
-        proj.position.set(a.x, a.y);
-        proj.zIndex = 9999;
-        unitsLayer.addChild(proj);
+          Math.atan2(b.y - a.y, b.x - a.x) +
+          boardLayout.rotRad +
+          ((sp?.rotation ?? 0) * Math.PI) / 180;
+        billboard.addChild(proj);
+        unitsLayer.addChild(billboard);
         proj.play();
         return tween(
           flightMs,
           (p) => {
             const e = easeInOutQuad(p);
-            proj.position.set(lerp(a.x, b.x, e), lerp(a.y, b.y, e));
+            billboard.position.set(lerp(a.x, b.x, e), lerp(a.y, b.y, e));
           },
           myId,
         ).then(() => {
           try {
-            proj.destroy();
+            billboard.destroy({ children: true });
           } catch {
             /* already torn down */
           }
