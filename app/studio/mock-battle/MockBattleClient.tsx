@@ -266,6 +266,11 @@ async function requestResolve(req: ResolveRequest): Promise<ResolveOutcome> {
  * across an attack and the death it causes — exercising the replayer's
  * "preserve emitted order within equal t" path.
  */
+// =============================================================================
+// SECTION > mockResolve: offline deterministic fallback simulator
+// Seam (Phase 1 -> mockResolve.ts): mockResolve
+// Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+// =============================================================================
 function mockResolve(req: ResolveRequest): ResolveResult {
   type SU = {
     id: string;
@@ -659,6 +664,11 @@ function BattleStage({
       }
 
       const derivedCache: Record<string, any[]> = {};
+      // =============================================================================
+      // SECTION > battleClips: frames loader, asset scoping, action resolution
+      // Seam (Phase 2 -> battleClips.ts): framesForKey, migrateAction, ownedKeys, basePose, flattenAction, clipForRole
+      // Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+      // =============================================================================
       function framesForKey(key: string): any[] {
         if (framesByKey[key]) return framesByKey[key];
         if (derivedCache[key]) return derivedCache[key];
@@ -872,6 +882,11 @@ function BattleStage({
       const pixelOf = (q: number, r: number) =>
         isoPos(q, r, tileW, tileW * ratio);
 
+      // =============================================================================
+      // SECTION > battleBoard: iso geometry, grid, layout
+      // Seam (Phase 2 -> battleBoard.ts): centerBoard, drawGrid, relayout, applyMap, pixelOf
+      // Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+      // =============================================================================
       function centerBoard() {
         const hw = tileW / 2;
         const hh = (tileW * ratio) / 2;
@@ -1162,6 +1177,11 @@ function BattleStage({
           cleanups.push(() => clearTimeout(id));
         });
       }
+      // =============================================================================
+      // SECTION > battleReplay: choreography core (KEEP co-located behind StageCtx; spell slice = flyProjectile + spellcast branch of runBeat)
+      // Seam (Phase 3 -> stays for now): tween, playOnce, spawnDamage, updateHp, flashHit, knockback, flyProjectile, doMove, doAttack, doDeath, runBeat, runReplay
+      // Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+      // =============================================================================
       function tween(
         ms: number,
         fn: (p: number) => void,
@@ -1733,6 +1753,11 @@ function restoreParties(
   return { players, enemies };
 }
 
+// =============================================================================
+// SECTION > BoardPreview (React subcomponent)
+// Seam (Phase 1 -> BoardPreview.tsx): BoardPreview
+// Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+// =============================================================================
 function BoardPreview({
   players,
   enemies,
@@ -1817,6 +1842,11 @@ function BoardPreview({
  * MockBattleClient — top-level page client
  * ------------------------------------------------------------------ */
 
+// =============================================================================
+// SECTION > MockBattleClient: party-builder state + persisted roster (page shell)
+// Seam (stays - page entry): MockBattleClient
+// Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+// =============================================================================
 export default function MockBattleClient() {
   const [config, setConfig] = useState<BootstrapConfig | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(true);
@@ -2427,6 +2457,11 @@ const STAT_FIELDS: { key: keyof UnitStats; label: string; title: string }[] = [
   { key: "range", label: "RNG", title: "Range in hexes" },
 ];
 
+// =============================================================================
+// SECTION > PartyColumn (React subcomponent)
+// Seam (Phase 1 -> PartyColumn.tsx): PartyColumn
+// Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+// =============================================================================
 function PartyColumn({
   team,
   title,
@@ -2624,6 +2659,11 @@ const UI_SECTIONS: { title: string; group: PanelGroup; controls: SliderControl[]
   },
 ];
 
+// =============================================================================
+// SECTION > DisplayConfigPanel (React subcomponent)
+// Seam (Phase 1 -> DisplayConfigPanel.tsx): DisplayConfigPanel
+// Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
+// =============================================================================
 function DisplayConfigPanel({
   open,
   onToggle,

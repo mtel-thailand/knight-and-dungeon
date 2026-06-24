@@ -5,6 +5,23 @@ previewing and configuring spritesheet animations, plus a Python/ffmpeg pipeline
 green-screen MP4s into those spritesheets. A party-vs-party hex auto-battle sandbox
 (`/studio/mock-battle`) is **built** on top — see *Mock-Battle feature* below and the full doc `MOCK_BATTLE.md`.
 
+## Module map
+
+The codebase is organized into 7 modules; each has its own `AGENTS.md` auto-surfaced when you work in its directory. Inter-module communication is via contracts only — never reach into another module's internals.
+
+| Module | Responsibility | Doc | Owner archetype |
+|---|---|---|---|
+| A contract | frozen sim/CMS types, board shape, bounds, `/api/config` payload shape | `lib/battle/AGENTS.md` | oracle (gatekeeper) |
+| B battle-engine | pure deterministic sim + resolve HTTP adapter | `lib/battle/AGENTS.md`, `app/api/battle/AGENTS.md` | fixer (oracle-reviewed) |
+| C persistence | SQLite schema/migrations + config API aggregator & writers | `app/api/config/AGENTS.md` | fixer |
+| D asset-pipeline | MP4→spritesheet (Python CLI + server routes) | `app/api/animation/AGENTS.md` | fixer |
+| E studio-cms | imperative-DOM character/anim/action/battle-data CMS + preview | `app/studio/AGENTS.md` | fixer (senior FE) |
+| F spell-cms | global spell library (React pages) | `app/studio/spells/AGENTS.md` | fixer |
+| G mock-battle | Pixi replayer + party builder + game-screen shell | `app/studio/mock-battle/AGENTS.md` | fixer (Pixi) |
+
+Cross-cutting invariants: the determinism firewall stays in `lib/battle`; the shared `[5,6,7,6,5]` board lives in `studioHelpers` + `BOARD`; SQLite/WAL runs with one `next dev`; `/api/config` POST strip-list must track GET; the studio stays imperative DOM with injected `<style>`; `BootstrapPayload` is a client mirror and can drift.
+Deep-dive battle docs live with module G (`MOCK_BATTLE.md`, `MOCK_BATTLE_PLAN.md`, `MOCK_BATTLE_TASKS.md`); the root stays the single index.
+
 ## Commands
 
 - `npm run dev` / `npm run build` / `npm start` — Next dev server / production build / serve.

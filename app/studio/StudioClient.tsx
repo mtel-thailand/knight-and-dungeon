@@ -486,6 +486,11 @@ export default function StudioClient() {
       // (scale/anchor/alpha/rotation/tint). Every entry point (startup, switch
       // animation, switch character, preview restore) goes through here so the
       // sprite never renders with a stale or partial transform set.
+      // =============================================================================
+      // SECTION > SHELL: Pixi preview + character list + applyAnimation (STAYS - do not extract)
+      // Seam (shell - keep): applyAnimation
+      // Owner: studio-cms (E) - see app/studio/AGENTS.md
+      // =============================================================================
       function applyAnimation(idx: number) {
         const def = animations[idx];
         if (!def) return;
@@ -773,6 +778,11 @@ export default function StudioClient() {
         }
       }
 
+      // =============================================================================
+      // SECTION > studioActionEditor: action authoring + preview + playback panel
+      // Seam (Phase 2 -> studioActionEditor.ts): renderActionEditor, previewAction, renderPlaybackPanel
+      // Owner: studio-cms (E) - see app/studio/AGENTS.md
+      // =============================================================================
       function renderActionEditor(action: Action) {
         actionEditorEl.innerHTML = "";
         showActionEditor();
@@ -1239,6 +1249,11 @@ export default function StudioClient() {
       // (mirrors the init loader at the top of this effect) so a new animation
       // shows up without a full page reload. Returns the new catalog index, or
       // -1 if frames couldn't be built (caller falls back to a reload).
+      // =============================================================================
+      // SECTION > studioAnimationAdd: live animation load + submit + Spells tab
+      // Seam (Phase 2 -> studioAnimationAdd.ts): loadAnimationLive, submitAnimation, renderSpellsTab
+      // Owner: studio-cms (E) - see app/studio/AGENTS.md
+      // =============================================================================
       async function loadAnimationLive(
         row: Pick<CatalogEntry, "key" | "label" | "image" | "frameData">,
         seedDuration: number | null,
@@ -1964,6 +1979,11 @@ export default function StudioClient() {
       // Normalize + store the live stats/roles object for a character (created
       // on first view so Save always has a complete object to send). Called
       // once per render; row handlers then mutate the returned object directly.
+      // =============================================================================
+      // SECTION > studioBattlePanel: Battle Data CMS (stats / roles / spells) -> writes /api/config/battle
+      // Seam (Phase 2 -> studioBattlePanel.ts): getStats, getRoles, getActionsForChar, getAnimationsForChar, saveBattle, renderBattlePanel
+      // Owner: studio-cms (E) - see app/studio/AGENTS.md
+      // =============================================================================
       function getStats(id: string): UnitStats {
         const s = battleStatsState[id];
         const stats: UnitStats = {
