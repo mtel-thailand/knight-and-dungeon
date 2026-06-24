@@ -937,7 +937,12 @@ function BattleStage({
       }
 
       // A spell projectile: an AnimatedSprite that flies caster -> target along a
-      // straight line, then destroys itself. Empty frames (no projectile art) ->
+      // straight line, then destroys itself. SCREEN-SPACE overlay matching the spell-
+      // editor preview exactly (correct size + per-axis proportion + upright orientation).
+      // Uses board.toGlobal to lift board-local pixel coords into screen space, then
+      // applies the same base scale formula the preview uses — /cos per axis, tileW/72
+      // ratio, boardScale * fitScale — producing a projectile that reads at the same
+      // size and aspect as the Canvas2D preview. Empty frames (no projectile art) ->
       // just wait the span so impact still lands on arrival.
       function flyProjectile(
         spellId: string,
@@ -947,47 +952,58 @@ function BattleStage({
       ): Promise<void> {
         const sp = (config.spells ?? []).find((s) => s.id === spellId);
         const frames = sp ? framesForKey(sp.animationKey) : [];
-        // SpellDef visual config: flight time, render offset, orientation, scaleX/Y.
         const flightMs = (sp?.duration ?? DEFAULT_SPELL_DURATION) * 1000;
-        const offX = sp?.offsetX ?? 0;
-        const offY = sp?.offsetY ?? 0;
+        if (!frames.length) return wait(flightMs); // no art -> preserve impact timing
+
         const pa = pixelOf(from.q, from.r);
         const pb = pixelOf(to.q, to.r);
-        // Shift both endpoints by the offset so the whole straight line translates.
-        const a = { x: pa.x + offX, y: pa.y + offY };
-        const b = { x: pb.x + offX, y: pb.y + offY };
-        if (!frames.length) return wait(flightMs); // no art -> preserve timing
-        const k = boardLayout.tileW / TW0;
-        const isx = 1 / Math.cos(boardLayout.rotYRad);
-        const isy = 1 / Math.cos(boardLayout.rotXRad);
-        const billboard = new Container();
-        billboard.rotation = -boardLayout.rotRad;
-        billboard.scale.set(isx, isy);
-        billboard.position.set(a.x, a.y);
-        billboard.zIndex = 9999;
+
+        const cX = Math.cos(boardLayout.rotXRad);
+        const cY = Math.cos(boardLayout.rotYRad);
+        const fitScale =
+          Math.min(pixiApp.screen.width, pixiApp.screen.height) / 640; // BOARD_REF_SIDE
+        const base =
+          boardLayout.boardScale *
+          fitScale *
+          (boardLayout.tileW / DEFAULT_MAP.tileWidth); // /72, NOT TW0
+        const spriteScaleX = ((sp?.scaleX ?? 1) * base) / cY;
+        const spriteScaleY = ((sp?.scaleY ?? 1) * base) / cX;
+        const spellRot = ((sp?.rotation ?? 0) * Math.PI) / 180;
+        const offX = sp?.offsetX ?? 0;
+        const offY = sp?.offsetY ?? 0;
+        // board.toGlobal converts board-local coords -> screen space, matching how the
+        // preview lifts iso-positions through its transform. Offsets are then applied
+        // in screen space (negated Y so +offsetY still means up).
+        const project = (bx: number, by: number) => {
+          const s = board.toGlobal({ x: bx, y: by });
+          return { x: s.x + offX, y: s.y - offY };
+        };
+        const a0 = project(pa.x, pa.y);
+        const b0 = project(pb.x, pb.y);
+        const travelAngle = Math.atan2(b0.y - a0.y, b0.x - a0.x) + spellRot;
 
         const proj = new AnimatedSprite(frames);
         proj.anchor.set(0.5);
-        proj.loop = sp?.loop ?? true; // false -> frames play once (flight unchanged)
-        proj.scale.set(k * (sp?.scaleX ?? 1), k * (sp?.scaleY ?? 1));
+        proj.loop = sp?.loop ?? true;
         proj.animationSpeed = (sp?.fps ?? DEFAULT_SPELL_FPS) / TICKER_FPS;
-        proj.rotation =
-          Math.atan2(b.y - a.y, b.x - a.x) +
-          boardLayout.rotRad +
-          ((sp?.rotation ?? 0) * Math.PI) / 180;
-        billboard.addChild(proj);
-        unitsLayer.addChild(billboard);
+        proj.scale.set(spriteScaleX, spriteScaleY);
+        proj.rotation = travelAngle;
+        proj.position.set(a0.x, a0.y);
+        proj.zIndex = 9999;
+        pixiApp.stage.addChild(proj);
         proj.play();
+
         return tween(
           flightMs,
           (p) => {
             const e = easeInOutQuad(p);
-            billboard.position.set(lerp(a.x, b.x, e), lerp(a.y, b.y, e));
+            const lp = project(lerp(pa.x, pb.x, e), lerp(pa.y, pb.y, e));
+            proj.position.set(lp.x, lp.y);
           },
           myId,
         ).then(() => {
           try {
-            billboard.destroy({ children: true });
+            proj.destroy();
           } catch {
             /* already torn down */
           }
