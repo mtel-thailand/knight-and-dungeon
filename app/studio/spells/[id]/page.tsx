@@ -709,20 +709,20 @@ export default function SpellEditPage() {
                   <label className="spell-slider">
                     <span className="spell-slider-head">
                       <span>Scale X</span>
-                      <span className="spell-slider-val">{scaleX.toFixed(2)}×</span>
+                      <span className="spell-slider-val">{scaleX.toFixed(3)}×</span>
                     </span>
                     <input
-                      className="spell-range"
-                      type="range"
+                      className="spell-num"
+                      type="number"
                       min={SPELL_BOUNDS.scaleX.min}
                       max={SPELL_BOUNDS.scaleX.max}
-                      step={0.05}
+                      step={0.001}
                       value={scaleX}
                       onChange={(e) =>
                         update(
                           "scaleX",
                           clamp(
-                            numOr(e.target.value, 1),
+                            Math.round(numOr(e.target.value, 1) * 1000) / 1000,
                             SPELL_BOUNDS.scaleX.min,
                             SPELL_BOUNDS.scaleX.max,
                           ),
@@ -733,20 +733,20 @@ export default function SpellEditPage() {
                   <label className="spell-slider">
                     <span className="spell-slider-head">
                       <span>Scale Y</span>
-                      <span className="spell-slider-val">{scaleY.toFixed(2)}×</span>
+                      <span className="spell-slider-val">{scaleY.toFixed(3)}×</span>
                     </span>
                     <input
-                      className="spell-range"
-                      type="range"
+                      className="spell-num"
+                      type="number"
                       min={SPELL_BOUNDS.scaleY.min}
                       max={SPELL_BOUNDS.scaleY.max}
-                      step={0.05}
+                      step={0.001}
                       value={scaleY}
                       onChange={(e) =>
                         update(
                           "scaleY",
                           clamp(
-                            numOr(e.target.value, 1),
+                            Math.round(numOr(e.target.value, 1) * 1000) / 1000,
                             SPELL_BOUNDS.scaleY.min,
                             SPELL_BOUNDS.scaleY.max,
                           ),

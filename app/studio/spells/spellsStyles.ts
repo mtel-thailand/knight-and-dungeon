@@ -160,6 +160,20 @@ export const SPELLS_PAGE_CSS = `
     font-family: 'SF Mono','Fira Code',monospace; font-size: 12px; color: #9fe7ad;
     font-variant-numeric: tabular-nums;
   }
+  .spells-page .spell-num {
+    width: 100%; box-sizing: border-box;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px; color: #e8e8f0;
+    font-size: 13px; font-family: inherit;
+    padding: 8px 10px; outline: none;
+    transition: border-color 0.15s, background 0.15s;
+    -moz-appearance: textfield;
+  }
+  .spells-page .spell-num::-webkit-inner-spin-button,
+  .spells-page .spell-num::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
   .spells-page .spell-range {
     -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 0;
     border-radius: 999px; background: rgba(255,255,255,0.13); outline: none; cursor: pointer;
