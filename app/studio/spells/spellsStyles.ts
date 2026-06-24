@@ -187,4 +187,25 @@ export const SPELLS_PAGE_CSS = `
     width: 15px; height: 15px; border-radius: 50%; background: #6ad27a;
     border: 2px solid #0a0a0f; cursor: pointer;
   }
+  .spells-page .spell-select-wrap {
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .spells-page .spell-select-label {
+    font-size: 11px; color: rgba(255,255,255,0.5);
+  }
+  .spells-page .spell-select {
+    -webkit-appearance: none; appearance: none; width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px; color: #e8e8f0;
+    font-size: 13px; font-family: inherit;
+    padding: 8px 12px; outline: none; cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .spells-page .spell-select:focus {
+    border-color: rgba(255,255,255,0.32); background: rgba(255,255,255,0.08);
+  }
+  .spells-page .spell-select option {
+    background: #1a1a24; color: #e8e8f0;
+  }
 `;

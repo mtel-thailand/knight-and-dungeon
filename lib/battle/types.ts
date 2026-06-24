@@ -30,6 +30,10 @@ export const SPELL_TYPES: readonly SpellType[] = ["attack"] as const;
 export const DEFAULT_SPELL_TYPE: SpellType = "attack";
 
 // CMS entity, persisted in `spells`, surfaced in GET /api/config as `spells`.
+export type SpellTransition = "fade" | "none";
+export const SPELL_TRANSITIONS = ["fade", "none"] as const;
+export const DEFAULT_SPELL_TRANSITION: SpellTransition = "fade";
+
 export type SpellDef = {
   id: string;
   name: string;
@@ -47,6 +51,8 @@ export type SpellDef = {
   offsetX?: number; // projectile render X offset, px (-200..200)
   offsetY?: number; // projectile render Y offset, px (-200..200)
   rotation?: number; // orientation offset added to the aim, degrees
+  transitionIn?: SpellTransition; // projectile fade-in style (default "fade")
+  transitionOut?: SpellTransition; // projectile fade-out style (default "fade")
 };
 
 // What travels to the PURE engine per member (the engine can't read the DB).
@@ -72,6 +78,7 @@ export const SPELL_BOUNDS = {
 export const MAX_SPELLS_PER_UNIT = 8;
 export const DEFAULT_SPELL_FPS = 12; // projectile playback fps when a spell has no `fps`
 export const DEFAULT_SPELL_DURATION = 0.36; // projectile flight seconds (matches SPELL_FLIGHT_MS)
+export const SPELL_FADE_MS = 140; // projectile transition-in/out alpha fade duration (ms), clamped to ≤ half of flight time
 
 export type UnitStats = {
   hp: number;

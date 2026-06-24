@@ -10,6 +10,7 @@ import type {
   MapConfig,
   DamageConfig,
   SpellDef,
+  SpellTransition,
   SpellType,
 } from "@/lib/battle/types";
 
@@ -194,6 +195,12 @@ function createDb(): Database.Database {
   }
   if (!spellCols.has("rotation")) {
     db.exec("ALTER TABLE spells ADD COLUMN rotation REAL");
+  }
+  if (!spellCols.has("transition_in")) {
+    db.exec("ALTER TABLE spells ADD COLUMN transition_in TEXT");
+  }
+  if (!spellCols.has("transition_out")) {
+    db.exec("ALTER TABLE spells ADD COLUMN transition_out TEXT");
   }
   return db;
 }
@@ -658,7 +665,7 @@ export function saveDamageConfig(cfg: DamageConfig): void {
 export function listSpells(): SpellDef[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, name, animation_key, type, power, cooldown, fps, scale, scale_x, scale_y, loop, duration, offset_x, offset_y, rotation
+      `SELECT id, name, animation_key, type, power, cooldown, fps, scale, scale_x, scale_y, loop, duration, offset_x, offset_y, rotation, transition_in, transition_out
          FROM spells ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -677,6 +684,8 @@ export function listSpells(): SpellDef[] {
     offset_x: number | null;
     offset_y: number | null;
     rotation: number | null;
+    transition_in: string | null;
+    transition_out: string | null;
   }>;
   return rows.map((r) => ({
     id: r.id,
@@ -693,6 +702,8 @@ export function listSpells(): SpellDef[] {
     offsetX: r.offset_x ?? undefined,
     offsetY: r.offset_y ?? undefined,
     rotation: r.rotation ?? undefined,
+    transitionIn: (r.transition_in as SpellTransition) ?? undefined,
+    transitionOut: (r.transition_out as SpellTransition) ?? undefined,
   }));
 }
 
@@ -725,6 +736,8 @@ export function upsertSpell(s: {
   offsetX?: number;
   offsetY?: number;
   rotation?: number;
+  transitionIn?: SpellTransition;
+  transitionOut?: SpellTransition;
   sortOrder?: number;
 }): void {
   const db = getDb();
@@ -736,8 +749,8 @@ export function upsertSpell(s: {
         .get() as { n: number }
     ).n;
   db.prepare(
-    `INSERT INTO spells (id, name, animation_key, type, power, cooldown, fps, scale, scale_x, scale_y, loop, duration, offset_x, offset_y, rotation, sort_order)
-       VALUES (@id, @name, @animation_key, @type, @power, @cooldown, @fps, @scale, @scale_x, @scale_y, @loop, @duration, @offset_x, @offset_y, @rotation, @sort_order)
+    `INSERT INTO spells (id, name, animation_key, type, power, cooldown, fps, scale, scale_x, scale_y, loop, duration, offset_x, offset_y, rotation, transition_in, transition_out, sort_order)
+       VALUES (@id, @name, @animation_key, @type, @power, @cooldown, @fps, @scale, @scale_x, @scale_y, @loop, @duration, @offset_x, @offset_y, @rotation, @transition_in, @transition_out, @sort_order)
      ON CONFLICT(id) DO UPDATE SET
        name          = excluded.name,
        animation_key = excluded.animation_key,
@@ -752,7 +765,9 @@ export function upsertSpell(s: {
        duration      = excluded.duration,
        offset_x      = excluded.offset_x,
        offset_y      = excluded.offset_y,
-       rotation      = excluded.rotation`,
+       rotation      = excluded.rotation,
+       transition_in = excluded.transition_in,
+       transition_out = excluded.transition_out`,
   ).run({
     id: s.id,
     name: s.name,
@@ -769,6 +784,8 @@ export function upsertSpell(s: {
     offset_x: s.offsetX ?? null,
     offset_y: s.offsetY ?? null,
     rotation: s.rotation ?? null,
+    transition_in: s.transitionIn === "fade" || s.transitionIn === "none" ? s.transitionIn : null,
+    transition_out: s.transitionOut === "fade" || s.transitionOut === "none" ? s.transitionOut : null,
     sort_order: sortOrder,
   });
 }

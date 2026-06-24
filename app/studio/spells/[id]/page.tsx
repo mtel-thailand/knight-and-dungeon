@@ -14,13 +14,16 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import type { MapConfig, SpellDef } from "@/lib/battle/types";
+import type { MapConfig, SpellDef, SpellTransition } from "@/lib/battle/types";
 import {
   BOARD,
   DEFAULT_MAP_CONFIG as DEFAULT_MAP,
   SPELL_BOUNDS,
   DEFAULT_SPELL_FPS,
   DEFAULT_SPELL_DURATION,
+  SPELL_FADE_MS,
+  DEFAULT_SPELL_TRANSITION,
+  SPELL_TRANSITIONS,
 } from "@/lib/battle/types";
 import { getHexRowsFromCounts, isoHex, isoPos } from "../../studioHelpers";
 import type { BootstrapPayload, CatalogEntry } from "../../studioTypes";
@@ -445,6 +448,21 @@ export default function SpellEditPage() {
       ctx.restore();
     };
 
+    // Alpha fade for transition-in/out. Clamp fade duration to at most half the
+    // flight so the transition never dominates the travel.
+    const fadeMs = Math.min(SPELL_FADE_MS, FLIGHT_MS / 2);
+    const projectileAlpha = (tMs: number): number => {
+      if (tMs >= FLIGHT_MS) return 1; // not flying → no projectile drawn
+      // Transition in: alpha 0→1 over the first fadeMs
+      if (transitionIn === "fade" && tMs < fadeMs) {
+        return tMs / fadeMs;
+      }
+      // Transition out: alpha 1→0 over the last fadeMs
+      if (transitionOut === "fade" && FLIGHT_MS - tMs <= fadeMs) {
+        return (FLIGHT_MS - tMs) / fadeMs;
+      }
+      return 1;
+    };
     // t: ms into the current pass (0..cycle). Projectile only shows while flying;
     // the gap leaves just the field, reading as a brief impact pause.
     const render = (t: number) => {
@@ -475,6 +493,7 @@ export default function SpellEditPage() {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(travelAngle);
+        ctx.globalAlpha = projectileAlpha(t);
         ctx.drawImage(img, f.x, f.y, f.w, f.h, -dw / 2, -dh / 2, dw, dh);
         ctx.restore();
       }
@@ -504,6 +523,8 @@ export default function SpellEditPage() {
     spell?.offsetX,
     spell?.offsetY,
     spell?.rotation,
+    spell?.transitionIn,
+    spell?.transitionOut,
     mapConfig,
     previewSide,
   ]);
@@ -605,6 +626,8 @@ export default function SpellEditPage() {
   const offsetX = finiteOr(spell?.offsetX, 0);
   const offsetY = finiteOr(spell?.offsetY, 0);
   const rotation = finiteOr(spell?.rotation, 0);
+  const transitionIn: SpellTransition = spell?.transitionIn ?? DEFAULT_SPELL_TRANSITION;
+  const transitionOut: SpellTransition = spell?.transitionOut ?? DEFAULT_SPELL_TRANSITION;
 
   return (
     <div className="spells-page">
@@ -858,6 +881,48 @@ export default function SpellEditPage() {
                     onChange={(e) => update("loop", e.target.checked)}
                   />
                   <span>Loop animation</span>
+                </label>
+                <label className="spell-select-wrap">
+                  <span className="spell-select-label">Transition In</span>
+                  <select
+                    className="spell-select"
+                    value={transitionIn}
+                    onChange={(e) =>
+                      update(
+                        "transitionIn",
+                        SPELL_TRANSITIONS.includes(e.target.value as SpellTransition)
+                          ? (e.target.value as SpellTransition)
+                          : DEFAULT_SPELL_TRANSITION,
+                      )
+                    }
+                  >
+                    {SPELL_TRANSITIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {t === "fade" ? "Fade" : "None"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="spell-select-wrap">
+                  <span className="spell-select-label">Transition Out</span>
+                  <select
+                    className="spell-select"
+                    value={transitionOut}
+                    onChange={(e) =>
+                      update(
+                        "transitionOut",
+                        SPELL_TRANSITIONS.includes(e.target.value as SpellTransition)
+                          ? (e.target.value as SpellTransition)
+                          : DEFAULT_SPELL_TRANSITION,
+                      )
+                    }
+                  >
+                    {SPELL_TRANSITIONS.map((t) => (
+                      <option key={t} value={t}>
+                        {t === "fade" ? "Fade" : "None"}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
             </div>

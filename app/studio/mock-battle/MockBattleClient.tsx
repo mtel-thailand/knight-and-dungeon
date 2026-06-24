@@ -16,7 +16,7 @@ import type {
   Team,
   UnitStats,
 } from "@/lib/battle/types";
-import { BATTLE_TICK, BOARD, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_DURATION, DEFAULT_SPELL_FPS, MAX_BATTLE_TIME, STAT_BOUNDS } from "@/lib/battle/types";
+import { BATTLE_TICK, BOARD, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_DURATION, DEFAULT_SPELL_FPS, DEFAULT_SPELL_TRANSITION, MAX_BATTLE_TIME, SPELL_FADE_MS, STAT_BOUNDS } from "@/lib/battle/types";
 import { isoPos, isoHex, getHexRowsFromCounts } from "../studioHelpers";
 import GameScreenShell from "./GameScreenShell";
 import { mockResolve } from "./mockResolve";
@@ -993,12 +993,24 @@ function BattleStage({
         pixiApp.stage.addChild(proj);
         proj.play();
 
+        const fadeMs = Math.min(SPELL_FADE_MS, flightMs / 2);
+        const transIn = sp?.transitionIn ?? DEFAULT_SPELL_TRANSITION;
+        const transOut = sp?.transitionOut ?? DEFAULT_SPELL_TRANSITION;
         return tween(
           flightMs,
           (p) => {
             const e = easeInOutQuad(p);
             const lp = project(lerp(pa.x, pb.x, e), lerp(pa.y, pb.y, e));
             proj.position.set(lp.x, lp.y);
+            // Alpha fade for transition-in/out, matching the editor preview.
+            const elapsed = p * flightMs;
+            if (transIn === "fade" && elapsed < fadeMs) {
+              proj.alpha = elapsed / fadeMs;
+            } else if (transOut === "fade" && flightMs - elapsed <= fadeMs) {
+              proj.alpha = (flightMs - elapsed) / fadeMs;
+            } else {
+              proj.alpha = 1;
+            }
           },
           myId,
         ).then(() => {

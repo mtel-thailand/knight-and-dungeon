@@ -60,6 +60,14 @@ export async function POST(req: NextRequest) {
     offsetX: fin(spell.offsetX),
     offsetY: fin(spell.offsetY),
     rotation: fin(spell.rotation),
+    transitionIn:
+      spell.transitionIn === "fade" || spell.transitionIn === "none"
+        ? spell.transitionIn
+        : undefined,
+    transitionOut:
+      spell.transitionOut === "fade" || spell.transitionOut === "none"
+        ? spell.transitionOut
+        : undefined,
   });
   return NextResponse.json({ ok: true });
 }
