@@ -6,6 +6,8 @@ import type {
   PartyMemberInput,
   ResolveRequest,
   ResolveResult,
+  SpellDef,
+  SpellInput,
   UnitStats,
 } from "@/lib/battle/types";
 import { BOARD } from "@/lib/battle/types";
@@ -26,14 +28,31 @@ type Phase = "idle" | "fighting" | "won" | "lost";
  * from cfg.roster (and update both call sites). `john` is always seeded in
  * character_battle_stats; if it's somehow absent, the empty-party guard fires.
  */
-function getCampParty(battleStats: Record<string, UnitStats>): PartyMemberInput[] {
-  const s = battleStats["john"];
+function getCampParty(config: BootstrapConfig): PartyMemberInput[] {
+  const s = config.battleStats?.["john"];
   if (!s) return [];
   return [{
     characterId: "john",
     stats: { ...s, attackType: s.attackType ?? "melee", skills: s.skills ?? [] },
+    spells: spellsFor("john", config),
     position: deployHex("player", 0),
   }];
+}
+
+/** Resolve a character's owned spell ids -> the engine's SpellInput configs
+ *  (mirrors mock-battle's startFight). Without this, camp units fight spell-less. */
+function spellsFor(characterId: string, config: BootstrapConfig): SpellInput[] {
+  const byId = new Map((config.spells ?? []).map((s) => [s.id, s] as const));
+  return (config.characterSpells?.[characterId] ?? [])
+    .map((id) => byId.get(id))
+    .filter((s): s is SpellDef => !!s)
+    .map((s) => ({
+      id: s.id,
+      power: s.power,
+      cooldown: s.cooldown,
+      type: s.type,
+      animationKey: s.animationKey,
+    }));
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -78,7 +97,7 @@ export default function CampClient() {
         setActiveCampaign(camp);
 
         // Build initial player party (TEMP: fixed single john — see getCampParty)
-        setPlayerParty(getCampParty(cfg.battleStats ?? {}));
+        setPlayerParty(getCampParty(cfg));
       } catch {
         // Offline — empty config
         if (!cancelled) {
@@ -124,6 +143,7 @@ export default function CampClient() {
       enemies.push({
         characterId: charId,
         stats: { ...statsRaw, attackType: statsRaw.attackType ?? "melee", skills: statsRaw.skills ?? [] },
+        spells: spellsFor(charId, cfg),
         position: deployHex("enemy", i),
       });
     }
@@ -237,7 +257,7 @@ export default function CampClient() {
             ? data.campaigns.find((c: CampaignDef) => c.isActive)
             : null) ?? null;
         setActiveCampaign(camp);
-        setPlayerParty(getCampParty(cfg.battleStats ?? {}));
+        setPlayerParty(getCampParty(cfg));
         setLoading(false);
       })
       .catch(() => {
