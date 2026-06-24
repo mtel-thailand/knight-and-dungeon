@@ -44,12 +44,14 @@ export type BattleBoardCtx = {
   sprites: Record<string, BattleBoardSprite>;
   hexes: HexPosition[];
   TW0: number;
-  tileW: number;
-  ratio: number;
-  boardScale: number;
-  rotRad: number;
-  rotXRad: number;
-  rotYRad: number;
+  boardLayout: {
+    tileW: number;
+    ratio: number;
+    boardScale: number;
+    rotRad: number;
+    rotXRad: number;
+    rotYRad: number;
+  };
   mapCfgRef: MutableRefObject<MapConfig>;
   MAP_BOUNDS: BattleMapBounds;
 };
@@ -63,17 +65,17 @@ export function createBattleBoard(ctx: BattleBoardCtx) {
     sprites,
     hexes,
     TW0,
+    boardLayout,
     mapCfgRef,
     MAP_BOUNDS,
   } = ctx;
-  let { tileW, ratio, boardScale, rotRad, rotXRad, rotYRad } = ctx;
 
   const pixelOf = (q: number, r: number) =>
-    isoPos(q, r, tileW, tileW * ratio);
+    isoPos(q, r, boardLayout.tileW, boardLayout.tileW * boardLayout.ratio);
 
   function centerBoard() {
-    const hw = tileW / 2;
-    const hh = (tileW * ratio) / 2;
+    const hw = boardLayout.tileW / 2;
+    const hh = (boardLayout.tileW * boardLayout.ratio) / 2;
     let nX = Infinity,
       xX = -Infinity,
       nY = Infinity,
@@ -89,7 +91,7 @@ export function createBattleBoard(ctx: BattleBoardCtx) {
     board.pivot.set((nX + xX) / 2, (nY + xY) / 2);
     board.position.set(0, 0);
     board.scale.set(1);
-    board.rotation = rotRad;
+    board.rotation = boardLayout.rotRad;
     // Viewport: overall zoom + pitch/yaw foreshorten, around the screen center.
     viewport.pivot.set(0, 0);
     viewport.rotation = 0;
@@ -105,8 +107,8 @@ export function createBattleBoard(ctx: BattleBoardCtx) {
     const fitScale =
       Math.min(pixiApp.screen.width, pixiApp.screen.height) / BOARD_REF_SIDE;
     viewport.scale.set(
-      boardScale * fitScale * Math.cos(rotYRad),
-      boardScale * fitScale * Math.cos(rotXRad),
+      boardLayout.boardScale * fitScale * Math.cos(boardLayout.rotYRad),
+      boardLayout.boardScale * fitScale * Math.cos(boardLayout.rotXRad),
     );
     // Bottom-anchor the board to the center band: drop it so the front-most
     // tile edge rests just inside the bottom border (the Pixi host fills
@@ -114,16 +116,16 @@ export function createBattleBoard(ctx: BattleBoardCtx) {
     // the headroom above for the upright units instead of dead space below.
     // The board's lowest point lies (|halfW·sinθ| + |halfH·cosθ|) below its
     // pivot in board space (θ = the in-plane Z-rotation); the viewport's
-    // vertical zoom (boardScale·cos(pitch), matching scale.y above) converts
+    // vertical zoom (matching scale.y above) converts
     // that to screen px.
     const halfW = (xX - nX) / 2;
     const halfH = (xY - nY) / 2;
     const bottomDrop =
-      (Math.abs(halfW * Math.sin(rotRad)) +
-        Math.abs(halfH * Math.cos(rotRad))) *
-      boardScale *
+      (Math.abs(halfW * Math.sin(boardLayout.rotRad)) +
+        Math.abs(halfH * Math.cos(boardLayout.rotRad))) *
+      boardLayout.boardScale *
       fitScale *
-      Math.cos(rotXRad);
+      Math.cos(boardLayout.rotXRad);
     const BOTTOM_INSET = 8; // so the inner ring/vignette doesn't clip the edge
     viewport.position.set(
       pixiApp.screen.width / 2,
@@ -132,11 +134,11 @@ export function createBattleBoard(ctx: BattleBoardCtx) {
   }
 
   function drawGrid() {
-    const th = tileW * ratio;
+    const th = boardLayout.tileW * boardLayout.ratio;
     grid.clear();
     for (const h of hexes) {
       const { x, y } = pixelOf(h.q, h.r);
-      grid.poly(isoHex(x, y, tileW * 0.94, th * 0.94).flat());
+      grid.poly(isoHex(x, y, boardLayout.tileW * 0.94, th * 0.94).flat());
       const fill =
         h.r === BOARD.playerRow
           ? 0x163a4a
@@ -152,14 +154,14 @@ export function createBattleBoard(ctx: BattleBoardCtx) {
   // scaled to the live tile and counter-rotated so sprites/HP bars stay upright.
   function relayout() {
     drawGrid();
-    const k = tileW / TW0;
-    const isx = 1 / Math.cos(rotYRad); // counter yaw foreshorten
-    const isy = 1 / Math.cos(rotXRad); // counter pitch foreshorten
+    const k = boardLayout.tileW / TW0;
+    const isx = 1 / Math.cos(boardLayout.rotYRad); // counter yaw foreshorten
+    const isy = 1 / Math.cos(boardLayout.rotXRad); // counter pitch foreshorten
     for (const id of Object.keys(sprites)) {
       const su = sprites[id];
       const p = pixelOf(su.q, su.r);
       su.node.position.set(p.x, p.y);
-      su.node.rotation = -rotRad;
+      su.node.rotation = -boardLayout.rotRad;
       // Upright, unsquashed billboard — board zoom + counter-rotation only.
       // Facing lives on the BODY's scale-X (set at build/engage/reset) and is
       // zoom-independent, so it survives relayout without mirroring the UI.
@@ -170,16 +172,24 @@ export function createBattleBoard(ctx: BattleBoardCtx) {
 
   function applyMap() {
     const m = mapCfgRef.current;
-    tileW = clamp(m.tileWidth, MAP_BOUNDS.tileWidth.min, MAP_BOUNDS.tileWidth.max);
-    ratio = clamp(
+    boardLayout.tileW = clamp(
+      m.tileWidth,
+      MAP_BOUNDS.tileWidth.min,
+      MAP_BOUNDS.tileWidth.max,
+    );
+    boardLayout.ratio = clamp(
       m.tileHeightRatio,
       MAP_BOUNDS.tileHeightRatio.min,
       MAP_BOUNDS.tileHeightRatio.max,
     );
-    boardScale = clamp(m.scale, MAP_BOUNDS.scale.min, MAP_BOUNDS.scale.max);
-    rotRad = (m.rotation * Math.PI) / 180;
-    rotXRad = (m.rotationX * Math.PI) / 180;
-    rotYRad = (m.rotationY * Math.PI) / 180;
+    boardLayout.boardScale = clamp(
+      m.scale,
+      MAP_BOUNDS.scale.min,
+      MAP_BOUNDS.scale.max,
+    );
+    boardLayout.rotRad = (m.rotation * Math.PI) / 180;
+    boardLayout.rotXRad = (m.rotationX * Math.PI) / 180;
+    boardLayout.rotYRad = (m.rotationY * Math.PI) / 180;
     relayout();
   }
 

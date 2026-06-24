@@ -50,7 +50,7 @@ const SPELL_FLIGHT_MS = 360; // projectile travel time, caster -> target
 const HPBAR_MS = 180;
 const INTER_BEAT_MS = 80; // breathing room between equal-`t` beats
 
-/** 2:1 isometric tile ratio (tile height = tile width * ISO_RATIO), matching the studio iso grid. */
+/** 2:1 isometric geometry (tile height = tile width * ISO_RATIO), matching the studio iso grid. */
 const ISO_RATIO = 0.5;
 
 // The floating damage-number config (DamageCfg) + its defaults now live in the
@@ -108,7 +108,7 @@ function lerpColor(a: number, b: number, t: number): number {
   );
 }
 
-/** HP-bar color ramps red -> amber -> green as the ratio rises. */
+/** HP-bar color ramps red -> amber -> green as the fill level rises. */
 function hpColor(r: number): number {
   r = clamp(r, 0, 1);
   return r > 0.5
@@ -365,7 +365,7 @@ function BattleStage({
         resizeTo: wrapper,
         backgroundAlpha: 0,
         antialias: true,
-        // Render at the device pixel ratio (crisp text/vectors on HiDPI; without
+        // Render at the device pixel density (crisp text/vectors on HiDPI; without
         // it the canvas rasterizes at 1x and is CSS-upscaled -> blurry), but CAP
         // it so high-DPR phones don't pay to fill ~9x the pixels every frame.
         resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_SCALE),
@@ -527,11 +527,11 @@ function BattleStage({
           190,
         );
       })();
-      const TW0 = fitW; // sprite-build reference (units scaled to live tileW)
+      const TW0 = fitW; // sprite-build reference (units scaled to the live tile size)
       const BODY_H = TW0 * 1.3;
       // HP-bar height/gap and the damage stroke are authored in px at the default
       // tile (DEFAULT_MAP.tileWidth). Scale them into the TW0 build-frame so, after
-      // the node's k = tileW/TW0 scale, they track the board zoom uniformly (like
+      // the node's live-tile/reference scale, they track the board zoom uniformly (like
       // the ×TW0 sizes) instead of riding k — which distorted them once the board
       // no longer fit ~1:1 (e.g. inside the portrait shell's smaller center band).
       const pxScale = TW0 / DEFAULT_MAP.tileWidth;
@@ -552,26 +552,7 @@ function BattleStage({
       let rotXRad = (rotXDeg * Math.PI) / 180;
       let rotYRad = (rotYDeg * Math.PI) / 180;
 
-      const boardLayout = {
-        get tileW() {
-          return tileW;
-        },
-        get ratio() {
-          return ratio;
-        },
-        get boardScale() {
-          return boardScale;
-        },
-        get rotRad() {
-          return rotRad;
-        },
-        get rotXRad() {
-          return rotXRad;
-        },
-        get rotYRad() {
-          return rotYRad;
-        },
-      };
+      const boardLayout = { tileW, ratio, boardScale, rotRad, rotXRad, rotYRad };
 
       // Outer viewport applies the pseudo-3D tilt (pitch/yaw foreshorten) + zoom
       // OUTSIDE the in-plane Z-rotation, so units can counter just rotation +
@@ -597,12 +578,7 @@ function BattleStage({
         sprites,
         hexes,
         TW0,
-        tileW,
-        ratio,
-        boardScale,
-        rotRad,
-        rotXRad,
-        rotYRad,
+        boardLayout,
         mapCfgRef,
         MAP_BOUNDS,
       });
@@ -647,12 +623,12 @@ function BattleStage({
         su.accent
           .roundRect(-barW / 2 - 1, barY - 1, barW + 2, 2, 2)
           .fill({ color: su.team === "player" ? 0x38e0c4 : 0xff5d73, alpha: 0.8 });
-        const ratio = Math.max(0.0001, Math.min(1, su.hp / su.maxHp));
+        const hpRatio = Math.max(0.0001, Math.min(1, su.hp / su.maxHp));
         su.hpFill.clear();
         su.hpFill.roundRect(0, barY, barW, barH, 2).fill({ color: 0xffffff });
         su.hpFill.position.x = -barW / 2;
-        su.hpFill.scale.x = ratio;
-        su.hpFill.tint = hpColor(ratio);
+        su.hpFill.scale.x = hpRatio;
+        su.hpFill.tint = hpColor(hpRatio);
         su.hpFill.visible = !su.dead;
       }
       // Re-geometry every unit's HP bar (driven by the panel "Health bar" sliders).
@@ -865,7 +841,7 @@ function BattleStage({
           },
         });
         // The text is rasterized at its (small) local fontSize, then the unit node
-        // magnifies it by k = tileW/TW0 (+ board zoom). Rasterize fine enough to
+        // magnifies it by the live-tile/reference scale (+ board zoom). Rasterize fine enough to
         // stay crisp through that upscale (capped to avoid huge glyph textures).
         t.resolution = Math.min(
           4,
@@ -1453,7 +1429,7 @@ export default function MockBattleClient() {
   mapCfgRef.current = mapCfg;
   const applyMapRef = useRef<() => void>(() => {});
   // Top-down is a transient preset: snapshot the iso view, flatten (overhead
-  // ratio, no rotation), restore on toggle off. While it's on, saves are
+  // and unrotated), restore on toggle off. While it's on, saves are
   // suppressed so the persisted iso config is never clobbered (reload returns
   // to it) — mirroring the old overlay's behavior.
   const [topDown, setTopDown] = useState(false);
