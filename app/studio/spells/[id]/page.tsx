@@ -2,8 +2,9 @@
 
 // /studio/spells/[id] — EDIT page for one global spell.
 // Loads the spell + the animation catalog from GET /api/config (spell found by
-// the route id). A <canvas> preview plays the spell's animation, driven live by
-// the playback config (FPS / Scale / Loop). Edits Name / Power / Cooldown / the
+// the route id). A <canvas> preview plays the spell's animation on a tiny
+// mock-battle-like iso strip, driven live by the playback config (FPS / Scale /
+// Loop). Edits Name / Power / Cooldown / the
 // playback config locally, then Save → POST /api/config/spell { spell }. The
 // animation itself is set ONLY by uploading an MP4 ("Convert & assign" →
 // /api/spell/animation, which returns the new catalog key; the catalog is then
@@ -13,8 +14,14 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import type { SpellDef } from "@/lib/battle/types";
-import { SPELL_BOUNDS, DEFAULT_SPELL_FPS, DEFAULT_SPELL_DURATION } from "@/lib/battle/types";
+import type { MapConfig, SpellDef } from "@/lib/battle/types";
+import {
+  DEFAULT_MAP_CONFIG as DEFAULT_MAP,
+  SPELL_BOUNDS,
+  DEFAULT_SPELL_FPS,
+  DEFAULT_SPELL_DURATION,
+} from "@/lib/battle/types";
+import { isoHex, isoPos } from "../../studioHelpers";
 import type { BootstrapPayload, CatalogEntry } from "../../studioTypes";
 import { SPELLS_PAGE_CSS } from "../spellsStyles";
 
@@ -51,6 +58,37 @@ type FrameRect = { x: number; y: number; w: number; h: number };
 /** A spell's animation loaded and ready to play on the preview canvas. */
 type LoadedSheet = { img: HTMLImageElement; frames: FrameRect[] };
 
+type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
+
+const PREVIEW_BOARD_QS = [-1, 0, 1] as const;
+const PREVIEW_BOARD_R = 0;
+const PREVIEW_PAD = 28;
+const PREVIEW_MIN_W = 640;
+const PREVIEW_MIN_H = 240;
+const PREVIEW_MIN_ASPECT = 3.25;
+
+function expandBounds(bounds: Bounds, x: number, y: number) {
+  bounds.minX = Math.min(bounds.minX, x);
+  bounds.minY = Math.min(bounds.minY, y);
+  bounds.maxX = Math.max(bounds.maxX, x);
+  bounds.maxY = Math.max(bounds.maxY, y);
+}
+
+function transformPoint(
+  x: number,
+  y: number,
+  rotRad: number,
+  sx: number,
+  sy: number,
+): { x: number; y: number } {
+  const c = Math.cos(rotRad);
+  const s = Math.sin(rotRad);
+  return {
+    x: (x * c - y * s) * sx,
+    y: (x * s + y * c) * sy,
+  };
+}
+
 export default function SpellEditPage() {
   const params = useParams<{ id: string }>();
   const routeId = params?.id ?? "";
@@ -67,6 +105,7 @@ export default function SpellEditPage() {
   const [convertError, setConvertError] = useState<string | null>(null);
   // Animation catalog (from GET /api/config) + the spell's sheet loaded for preview.
   const [animations, setAnimations] = useState<CatalogEntry[]>([]);
+  const [mapConfig, setMapConfig] = useState<MapConfig>(() => ({ ...DEFAULT_MAP }));
   const [sheet, setSheet] = useState<LoadedSheet | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -79,6 +118,7 @@ export default function SpellEditPage() {
         const data: BootstrapPayload = await res.json();
         if (cancelled) return;
         setAnimations(data.animations ?? []);
+        setMapConfig({ ...DEFAULT_MAP, ...(data.mapConfig ?? {}) });
         const found = (data.spells ?? []).find((s) => s.id === routeId);
         if (found) setSpell({ ...found });
         else setNotFound(true);
@@ -130,18 +170,15 @@ export default function SpellEditPage() {
     };
   }, [animations, spell?.animationKey]);
 
-  // Demo the spell "in use": fly the projectile in a straight line across the
-  // preview (caster → target), looping the flight, while cycling the sheet
-  // frames at `fps` and aiming the sprite along the travel vector — mirroring
-  // the battle's flyProjectile. `loop` governs the FRAMES (on → cycle while
-  // flying; off → play once then hold the last frame); the flight itself always
-  // repeats. Re-runs (and cancels its rAF) whenever the sheet or any knob
-  // changes, so edits restart it cleanly.
+  // Demo the spell on a tiny mock-battle-like iso strip: one row, three tiles,
+  // with the spell sprite traveling from the first tile to the last while the
+  // board uses the same iso geometry + view transform as the battle board.
+  // `loop` still governs only the FRAMES (on → cycle while flying; off → play
+  // once then hold the last frame); the flight itself always repeats. Re-runs
+  // (and cancels the rAF) whenever the sheet, knobs, or map config changes.
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv || !sheet || sheet.frames.length === 0) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
 
     const { img, frames } = sheet;
     // finiteOr (not ??) so a NaN/±Infinity persisted value can't leak through and
@@ -155,38 +192,77 @@ export default function SpellEditPage() {
     const offY = clamp(finiteOr(spell?.offsetY, 0), SPELL_BOUNDS.offsetY.min, SPELL_BOUNDS.offsetY.max);
     const rotDeg = clamp(finiteOr(spell?.rotation, 0), SPELL_BOUNDS.rotation.min, SPELL_BOUNDS.rotation.max);
 
-    // Drawn footprint of the largest frame, plus a left→right, slightly rising
-    // flight path so the aim rotation actually reads on screen.
-    const spriteW = Math.max(...frames.map((f) => f.w)) * scale;
-    const spriteH = Math.max(...frames.map((f) => f.h)) * scale;
-    const travelX = Math.max(spriteW * 1.4, 190);
-    const travelY = travelX * 0.26; // gentle diagonal rise (~14.5°)
-    // Aim along the travel vector, plus the config's rotation offset (degrees).
-    const theta = Math.atan2(-travelY, travelX) + (rotDeg * Math.PI) / 180;
+    const map = mapConfig ?? DEFAULT_MAP;
+    const tileW = map.tileWidth;
+    const tileH = tileW * map.tileHeightRatio;
+    const boardScale = map.scale;
+    const rotRad = (map.rotation * Math.PI) / 180;
+    const rotXRad = (map.rotationX * Math.PI) / 180;
+    const rotYRad = (map.rotationY * Math.PI) / 180;
+    const fitScale = 1; // preview canvas is the viewport; bounds add the padding.
+    const viewScaleX = boardScale * fitScale * Math.cos(rotYRad);
+    const viewScaleY = boardScale * fitScale * Math.cos(rotXRad);
+    const rotOffRad = (rotDeg * Math.PI) / 180;
 
-    // Rotated-sprite half extents, so nothing clips at either end of the path.
-    const cosT = Math.abs(Math.cos(theta));
-    const sinT = Math.abs(Math.sin(theta));
-    const halfW = (spriteW * cosT + spriteH * sinT) / 2;
-    const halfH = (spriteW * sinT + spriteH * cosT) / 2;
-    const pad = 10;
-    // Shift the whole flight by the config offset. Canvas Y is down, so a positive
-    // Offset Y reads as "up" (matches the studio) → subtract from y. Grow the canvas
-    // by the shift and translate the start so negative shifts stay on-canvas (no clip).
+    const frameW = Math.max(...frames.map((f) => f.w));
+    const frameH = Math.max(...frames.map((f) => f.h));
+    const spriteScale = scale * boardScale * fitScale * (tileW / DEFAULT_MAP.tileWidth);
+    const spriteW = frameW * spriteScale;
+    const spriteH = frameH * spriteScale;
+
+    const boardPolys = PREVIEW_BOARD_QS.map((q) => {
+      const p = isoPos(q, PREVIEW_BOARD_R, tileW, tileH);
+      return isoHex(p.x, p.y, tileW * 0.94, tileH * 0.94);
+    });
+    const startLocal = isoPos(PREVIEW_BOARD_QS[0], PREVIEW_BOARD_R, tileW, tileH);
+    const endLocal = isoPos(PREVIEW_BOARD_QS[2], PREVIEW_BOARD_R, tileW, tileH);
+    const startScreen = transformPoint(startLocal.x, startLocal.y, rotRad, viewScaleX, viewScaleY);
+    const endScreen = transformPoint(endLocal.x, endLocal.y, rotRad, viewScaleX, viewScaleY);
     const shiftX = offX;
     const shiftY = -offY;
-    const baseW = travelX + 2 * halfW + 2 * pad;
-    const baseH = travelY + 2 * halfH + 2 * pad;
-    const tx = Math.max(0, -shiftX);
-    const ty = Math.max(0, -shiftY);
-    cv.width = Math.max(1, Math.round(baseW + Math.abs(shiftX)));
-    cv.height = Math.max(1, Math.round(baseH + Math.abs(shiftY)));
+    const start = { x: startScreen.x + shiftX, y: startScreen.y + shiftY };
+    const end = { x: endScreen.x + shiftX, y: endScreen.y + shiftY };
+    const travelAngle = Math.atan2(end.y - start.y, end.x - start.x) + rotOffRad;
+    const cosA = Math.abs(Math.cos(travelAngle));
+    const sinA = Math.abs(Math.sin(travelAngle));
+    const spriteHalfW = (spriteW * cosA + spriteH * sinA) / 2;
+    const spriteHalfH = (spriteW * sinA + spriteH * cosA) / 2;
 
-    // Caster (bottom-left) → target (top-right) centers, shifted by the offset.
-    const ax = halfW + pad + tx + shiftX;
-    const ay = baseH - halfH - pad + ty + shiftY;
-    const bx = ax + travelX;
-    const by = ay - travelY;
+    const bounds: Bounds = {
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+    };
+
+    for (const poly of boardPolys) {
+      for (const [x, y] of poly) {
+        const pt = transformPoint(x, y, rotRad, viewScaleX, viewScaleY);
+        expandBounds(bounds, pt.x, pt.y);
+      }
+    }
+
+    expandBounds(bounds, Math.min(start.x, end.x) - spriteHalfW, Math.min(start.y, end.y) - spriteHalfH);
+    expandBounds(bounds, Math.min(start.x, end.x) - spriteHalfW, Math.max(start.y, end.y) + spriteHalfH);
+    expandBounds(bounds, Math.max(start.x, end.x) + spriteHalfW, Math.min(start.y, end.y) - spriteHalfH);
+    expandBounds(bounds, Math.max(start.x, end.x) + spriteHalfW, Math.max(start.y, end.y) + spriteHalfH);
+
+    const rawW = Math.max(1, bounds.maxX - bounds.minX);
+    const rawH = Math.max(1, bounds.maxY - bounds.minY);
+    const canvasH = Math.max(Math.ceil(rawH + PREVIEW_PAD * 2), PREVIEW_MIN_H);
+    const canvasW = Math.max(
+      Math.ceil(rawW + PREVIEW_PAD * 2),
+      Math.ceil(canvasH * PREVIEW_MIN_ASPECT),
+      PREVIEW_MIN_W,
+    );
+    cv.width = canvasW;
+    cv.height = canvasH;
+
+    const ox = (canvasW - rawW) / 2 - bounds.minX;
+    const oy = (canvasH - rawH) / 2 - bounds.minY;
+
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
 
     const FLIGHT_MS = duration * 1000; // one pass — the spell's Flight (s), in ms
     const GAP_MS = 220; // brief pause (impact) before the flight repeats
@@ -197,38 +273,38 @@ export default function SpellEditPage() {
     let stopped = false;
     const t0 = performance.now();
 
-    // Faint trajectory + caster/target markers to convey the flight direction.
-    const drawField = () => {
+    const drawBoard = () => {
       ctx.save();
-      ctx.setLineDash([4, 6]);
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(159,231,173,0.16)";
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(bx, by);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = "rgba(255,255,255,0.22)"; // caster dot
-      ctx.beginPath();
-      ctx.arc(ax, ay, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(159,231,173,0.45)"; // target ring
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(bx, by, 4, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.translate(ox, oy);
+      ctx.scale(viewScaleX, viewScaleY);
+      ctx.rotate(rotRad);
+      for (let i = 0; i < boardPolys.length; i++) {
+        const poly = boardPolys[i];
+        ctx.beginPath();
+        poly.forEach(([x, y], idx) => {
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = "rgba(26,32,48,0.55)";
+        ctx.strokeStyle = "rgba(111,183,214,0.2)";
+        ctx.lineWidth = 1.5;
+        ctx.fill();
+        ctx.stroke();
+      }
       ctx.restore();
     };
 
     // t: ms into the current pass (0..cycle). Projectile only shows while flying;
     // the gap leaves just the field, reading as a brief impact pause.
     const render = (t: number) => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, cv.width, cv.height);
-      drawField();
+      drawBoard();
       if (t >= FLIGHT_MS) return; // gap between passes
       const e = easeInOutQuad(t / FLIGHT_MS);
-      const cx = lerp(ax, bx, e);
-      const cy = lerp(ay, by, e);
+      const cx = lerp(start.x, end.x, e) + ox;
+      const cy = lerp(start.y, end.y, e) + oy;
       // The first rAF `now` can precede `t0` (frame-start timestamp) → `t` < 0, and
       // a degenerate interval could be ≤0/non-finite — either makes the raw index
       // negative/NaN. Floor to 0 then normalize into [0, len-1] so we never index
@@ -242,18 +318,19 @@ export default function SpellEditPage() {
         : Math.min(frames.length - 1, Math.max(0, raw));
       const f = frames[fi];
       if (!f) return; // degenerate index → skip the sprite this frame, keep the field
-      const dw = f.w * scale;
-      const dh = f.h * scale;
+      const dw = f.w * spriteScale;
+      const dh = f.h * spriteScale;
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(theta);
+      ctx.rotate(travelAngle);
       ctx.drawImage(img, f.x, f.y, f.w, f.h, -dw / 2, -dh / 2, dw, dh);
       ctx.restore();
     };
 
     const tick = (now: number) => {
       if (stopped) return;
-      render((now - t0) % cycle); // modulo → no backgrounded-tab spiral
+      const elapsed = ((now - t0) % cycle + cycle) % cycle;
+      render(elapsed); // modulo-time → no backgrounded-tab spiral
       raf = requestAnimationFrame(tick);
     };
 
@@ -272,6 +349,7 @@ export default function SpellEditPage() {
     spell?.offsetX,
     spell?.offsetY,
     spell?.rotation,
+    mapConfig,
   ]);
 
   function update<K extends keyof SpellDef>(key: K, value: SpellDef[K]) {
