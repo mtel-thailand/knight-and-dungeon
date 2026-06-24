@@ -40,7 +40,8 @@ export type SpellDef = {
   // Visual-only playback config — used by the replay projectile + the editor
   // preview, NOT by the engine (so it never reaches SpellInput / the resolve payload).
   fps?: number; // projectile animation frames/sec (default DEFAULT_SPELL_FPS)
-  scale?: number; // projectile size multiplier (default 1)
+  scaleX?: number; // projectile width multiplier (default 1)
+  scaleY?: number; // projectile height multiplier (default 1)
   loop?: boolean; // loop the animation during flight (default true)
   duration?: number; // projectile FLIGHT time, seconds (default DEFAULT_SPELL_DURATION)
   offsetX?: number; // projectile render X offset, px (-200..200)
@@ -61,7 +62,8 @@ export const SPELL_BOUNDS = {
   power: { min: 0, max: 100 },
   cooldown: { min: 0, max: 600 },
   fps: { min: 1, max: 60 },
-  scale: { min: 0.01, max: 4 },
+  scaleX: { min: 0.01, max: 4 },
+  scaleY: { min: 0.01, max: 4 },
   duration: { min: 0.05, max: 5 },
   offsetX: { min: -200, max: 200 },
   offsetY: { min: -200, max: 200 },

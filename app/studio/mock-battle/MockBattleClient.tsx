@@ -948,7 +948,7 @@ function BattleStage({
       ): Promise<void> {
         const sp = (config.spells ?? []).find((s) => s.id === spellId);
         const frames = sp ? framesForKey(sp.animationKey) : [];
-        // SpellDef visual config: flight time, render offset, orientation.
+        // SpellDef visual config: flight time, render offset, orientation, scaleX/Y.
         const flightMs = (sp?.duration ?? DEFAULT_SPELL_DURATION) * 1000;
         const offX = sp?.offsetX ?? 0;
         const offY = sp?.offsetY ?? 0;
@@ -961,8 +961,8 @@ function BattleStage({
         const proj = new AnimatedSprite(frames);
         proj.anchor.set(0.5);
         proj.loop = sp?.loop ?? true; // false -> frames play once (flight unchanged)
-        const k = (boardLayout.tileW / TW0) * (sp?.scale ?? 1);
-        proj.scale.set(k, k);
+        const k = boardLayout.tileW / TW0;
+        proj.scale.set(k * (sp?.scaleX ?? 1), k * (sp?.scaleY ?? 1));
         proj.animationSpeed = (sp?.fps ?? DEFAULT_SPELL_FPS) / TICKER_FPS;
         proj.rotation =
           Math.atan2(b.y - a.y, b.x - a.x) + ((sp?.rotation ?? 0) * Math.PI) / 180;

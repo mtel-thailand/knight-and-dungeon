@@ -3,8 +3,8 @@
 // /studio/spells/[id] — EDIT page for one global spell.
 // Loads the spell + the animation catalog from GET /api/config (spell found by
 // the route id). A <canvas> preview plays the spell's animation on a mock-
-// battle-like hex board, driven live by the playback config (FPS / Scale /
-// Loop). Edits Name / Power / Cooldown / the
+// battle-like hex board, driven live by the playback config (FPS / Scale X /
+// Scale Y / Loop). Edits Name / Power / Cooldown / the
 // playback config locally, then Save → POST /api/config/spell { spell }. The
 // animation itself is set ONLY by uploading an MP4 ("Convert & assign" →
 // /api/spell/animation, which returns the new catalog key; the catalog is then
@@ -219,13 +219,18 @@ export default function SpellEditPage() {
       SPELL_BOUNDS.fps.min,
       SPELL_BOUNDS.fps.max,
     );
-    const scale = clamp(
-      finiteOr(spell?.scale, 1),
-      SPELL_BOUNDS.scale.min,
-      SPELL_BOUNDS.scale.max,
+    const scaleX = clamp(
+      finiteOr(spell?.scaleX, 1),
+      SPELL_BOUNDS.scaleX.min,
+      SPELL_BOUNDS.scaleX.max,
+    );
+    const scaleY = clamp(
+      finiteOr(spell?.scaleY, 1),
+      SPELL_BOUNDS.scaleY.min,
+      SPELL_BOUNDS.scaleY.max,
     );
     const loop = spell?.loop ?? true;
-    // Flight knobs — re-clamped here like fps/scale (the form clamps on edit too).
+    // Flight knobs — re-clamped here like fps/scaleX/scaleY (the form clamps on edit too).
     const duration = clamp(
       finiteOr(spell?.duration, DEFAULT_SPELL_DURATION),
       SPELL_BOUNDS.duration.min,
@@ -312,11 +317,9 @@ export default function SpellEditPage() {
     const lineEnd = { x: targetPos.x + shiftX, y: targetPos.y + shiftY };
     const travelAngle =
       Math.atan2(lineEnd.y - lineStart.y, lineEnd.x - lineStart.x) + rotOffRad;
-    const boardScaleFactor =
-      Math.abs(scale) * boardScale * fitScale * (tileW / DEFAULT_MAP.tileWidth);
-    const spriteScaleX = boardScaleFactor / Math.cos(rotYRad);
-    const spriteScaleY = boardScaleFactor / Math.cos(rotXRad);
-    const spriteFlip = scale < 0 ? -1 : 1;
+    const base = boardScale * fitScale * (tileW / DEFAULT_MAP.tileWidth);
+    const spriteScaleX = (scaleX * base) / Math.cos(rotYRad);
+    const spriteScaleY = (scaleY * base) / Math.cos(rotXRad);
     const tileScreenW = tileW * viewScaleX;
     const tileScreenH = tileH * viewScaleY;
     const unitH = Math.max(36, tileScreenH * 1.55);
@@ -477,7 +480,6 @@ export default function SpellEditPage() {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(travelAngle);
-        ctx.scale(spriteFlip, spriteFlip);
         ctx.drawImage(img, f.x, f.y, f.w, f.h, -dw / 2, -dh / 2, dw, dh);
         ctx.restore();
       }
@@ -500,7 +502,8 @@ export default function SpellEditPage() {
   }, [
     sheet,
     spell?.fps,
-    spell?.scale,
+    spell?.scaleX,
+    spell?.scaleY,
     spell?.loop,
     spell?.duration,
     spell?.offsetX,
@@ -600,7 +603,8 @@ export default function SpellEditPage() {
   // finiteOr (not ??) so a bad NaN value renders as the default in the sliders
   // (and a Save then persists a valid number — self-healing the stored spell).
   const fps = finiteOr(spell?.fps, DEFAULT_SPELL_FPS);
-  const scale = finiteOr(spell?.scale, 1);
+  const scaleX = finiteOr(spell?.scaleX, 1);
+  const scaleY = finiteOr(spell?.scaleY, 1);
   const loop = spell?.loop ?? true;
   const duration = finiteOr(spell?.duration, DEFAULT_SPELL_DURATION);
   const offsetX = finiteOr(spell?.offsetX, 0);
@@ -709,23 +713,47 @@ export default function SpellEditPage() {
                   </label>
                   <label className="spell-slider">
                     <span className="spell-slider-head">
-                      <span>Scale</span>
-                      <span className="spell-slider-val">{scale.toFixed(2)}×</span>
+                      <span>Scale X</span>
+                      <span className="spell-slider-val">{scaleX.toFixed(2)}×</span>
                     </span>
                     <input
                       className="spell-range"
                       type="range"
-                      min={SPELL_BOUNDS.scale.min}
-                      max={SPELL_BOUNDS.scale.max}
+                      min={SPELL_BOUNDS.scaleX.min}
+                      max={SPELL_BOUNDS.scaleX.max}
                       step={0.05}
-                      value={scale}
+                      value={scaleX}
                       onChange={(e) =>
                         update(
-                          "scale",
+                          "scaleX",
                           clamp(
                             numOr(e.target.value, 1),
-                            SPELL_BOUNDS.scale.min,
-                            SPELL_BOUNDS.scale.max,
+                            SPELL_BOUNDS.scaleX.min,
+                            SPELL_BOUNDS.scaleX.max,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                  <label className="spell-slider">
+                    <span className="spell-slider-head">
+                      <span>Scale Y</span>
+                      <span className="spell-slider-val">{scaleY.toFixed(2)}×</span>
+                    </span>
+                    <input
+                      className="spell-range"
+                      type="range"
+                      min={SPELL_BOUNDS.scaleY.min}
+                      max={SPELL_BOUNDS.scaleY.max}
+                      step={0.05}
+                      value={scaleY}
+                      onChange={(e) =>
+                        update(
+                          "scaleY",
+                          clamp(
+                            numOr(e.target.value, 1),
+                            SPELL_BOUNDS.scaleY.min,
+                            SPELL_BOUNDS.scaleY.max,
                           ),
                         )
                       }

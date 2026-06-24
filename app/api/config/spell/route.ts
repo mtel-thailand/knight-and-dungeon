@@ -42,9 +42,9 @@ export async function POST(req: NextRequest) {
   const fin = (v: unknown): number | undefined =>
     typeof v === "number" && Number.isFinite(v) ? v : undefined;
   // Forward the FULL spell incl. the visual playback config. upsertSpell does an
-  // ON CONFLICT replace of fps/scale/loop/duration/offsets/rotation, so omitting
-  // any here NULLs out that saved field on every save — which silently dropped the
-  // whole playback config (the "save doesn't persist" bug).
+  // ON CONFLICT replace of fps/scaleX/scaleY/loop/duration/offsets/rotation, so
+  // omitting any here NULLs out that saved field on every save — which silently
+  // dropped the whole playback config (the "save doesn't persist" bug).
   upsertSpell({
     id: spell.id,
     name: spell.name,
@@ -53,7 +53,8 @@ export async function POST(req: NextRequest) {
     power: fin(spell.power),
     cooldown: fin(spell.cooldown),
     fps: fin(spell.fps),
-    scale: fin(spell.scale),
+    scaleX: fin(spell.scaleX),
+    scaleY: fin(spell.scaleY),
     loop: typeof spell.loop === "boolean" ? spell.loop : undefined,
     duration: fin(spell.duration),
     offsetX: fin(spell.offsetX),

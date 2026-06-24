@@ -100,6 +100,8 @@ function createDb(): Database.Database {
       cooldown      REAL NOT NULL DEFAULT 0,
       fps           REAL,
       scale         REAL,
+      scale_x       REAL,
+      scale_y       REAL,
       loop          INTEGER,
       duration      REAL,
       offset_x      REAL,
@@ -154,10 +156,11 @@ function createDb(): Database.Database {
       "ALTER TABLE character_battle_stats ADD COLUMN attack_type TEXT NOT NULL DEFAULT 'melee'",
     );
   }
-  // Migration: spells predates the visual playback columns (fps / scale / loop /
-  // duration / offset_x / offset_y / rotation). They're nullable (optional in
-  // SpellDef), so existing data/app.db and the bundled data/seed/app.db gain them
-  // here, each ALTER guarded by a column check.
+  // Migration: spells predates the visual playback columns (fps / scale_x /
+  // scale_y / loop / duration / offset_x / offset_y / rotation). The legacy
+  // uniform column is retained; new scaleX/scaleY columns are nullable and
+  // existing data/app.db + bundled data/seed/app.db gain them here, each ALTER
+  // guarded by a column check.
   const spellCols = new Set(
     (
       db
@@ -170,6 +173,12 @@ function createDb(): Database.Database {
   }
   if (!spellCols.has("scale")) {
     db.exec("ALTER TABLE spells ADD COLUMN scale REAL");
+  }
+  if (!spellCols.has("scale_x")) {
+    db.exec("ALTER TABLE spells ADD COLUMN scale_x REAL");
+  }
+  if (!spellCols.has("scale_y")) {
+    db.exec("ALTER TABLE spells ADD COLUMN scale_y REAL");
   }
   if (!spellCols.has("loop")) {
     db.exec("ALTER TABLE spells ADD COLUMN loop INTEGER");
@@ -649,7 +658,7 @@ export function saveDamageConfig(cfg: DamageConfig): void {
 export function listSpells(): SpellDef[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, name, animation_key, type, power, cooldown, fps, scale, loop, duration, offset_x, offset_y, rotation
+      `SELECT id, name, animation_key, type, power, cooldown, fps, scale, scale_x, scale_y, loop, duration, offset_x, offset_y, rotation
          FROM spells ORDER BY sort_order, id`,
     )
     .all() as Array<{
@@ -661,6 +670,8 @@ export function listSpells(): SpellDef[] {
     cooldown: number;
     fps: number | null;
     scale: number | null;
+    scale_x: number | null;
+    scale_y: number | null;
     loop: number | null;
     duration: number | null;
     offset_x: number | null;
@@ -675,7 +686,8 @@ export function listSpells(): SpellDef[] {
     power: r.power,
     cooldown: r.cooldown,
     fps: r.fps ?? undefined,
-    scale: r.scale ?? undefined,
+    scaleX: r.scale_x ?? r.scale ?? undefined,
+    scaleY: r.scale_y ?? r.scale ?? undefined,
     loop: r.loop == null ? undefined : !!r.loop,
     duration: r.duration ?? undefined,
     offsetX: r.offset_x ?? undefined,
@@ -706,7 +718,8 @@ export function upsertSpell(s: {
   power?: number;
   cooldown?: number;
   fps?: number;
-  scale?: number;
+  scaleX?: number;
+  scaleY?: number;
   loop?: boolean;
   duration?: number;
   offsetX?: number;
@@ -723,8 +736,8 @@ export function upsertSpell(s: {
         .get() as { n: number }
     ).n;
   db.prepare(
-    `INSERT INTO spells (id, name, animation_key, type, power, cooldown, fps, scale, loop, duration, offset_x, offset_y, rotation, sort_order)
-       VALUES (@id, @name, @animation_key, @type, @power, @cooldown, @fps, @scale, @loop, @duration, @offset_x, @offset_y, @rotation, @sort_order)
+    `INSERT INTO spells (id, name, animation_key, type, power, cooldown, fps, scale, scale_x, scale_y, loop, duration, offset_x, offset_y, rotation, sort_order)
+       VALUES (@id, @name, @animation_key, @type, @power, @cooldown, @fps, @scale, @scale_x, @scale_y, @loop, @duration, @offset_x, @offset_y, @rotation, @sort_order)
      ON CONFLICT(id) DO UPDATE SET
        name          = excluded.name,
        animation_key = excluded.animation_key,
@@ -733,6 +746,8 @@ export function upsertSpell(s: {
        cooldown      = excluded.cooldown,
        fps           = excluded.fps,
        scale         = excluded.scale,
+       scale_x       = excluded.scale_x,
+       scale_y       = excluded.scale_y,
        loop          = excluded.loop,
        duration      = excluded.duration,
        offset_x      = excluded.offset_x,
@@ -746,7 +761,9 @@ export function upsertSpell(s: {
     power: s.power ?? 1,
     cooldown: s.cooldown ?? 0,
     fps: s.fps ?? null,
-    scale: s.scale ?? null,
+    scale: s.scaleX ?? null,
+    scale_x: s.scaleX ?? null,
+    scale_y: s.scaleY ?? null,
     loop: s.loop == null ? null : s.loop ? 1 : 0,
     duration: s.duration ?? null,
     offset_x: s.offsetX ?? null,

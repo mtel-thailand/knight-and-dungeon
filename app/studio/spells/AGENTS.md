@@ -15,7 +15,7 @@ preview/convert flow for visual spell assets.
 - Uses `slugify` from `../studioHelpers`.
 
 ## Invariants & gotchas
-- Visual-only fields live on `SpellDef`: `fps`, `scale`, `loop`, `duration`, `offsetX`, `offsetY`, `rotation`.
+- Visual-only fields live on `SpellDef`: `fps`, `scaleX`, `scaleY`, `loop`, `duration`, `offsetX`, `offsetY`, `rotation`.
 - Those fields are for preview/CMS only; they must never leak into the engine's `SpellInput`.
 - The preview canvas must restart cleanly on knob changes and cancel its rAF on teardown.
 - Per-character ownership stays in the studio Battle Data panel, not here.

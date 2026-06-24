@@ -21,7 +21,7 @@ byte-identical events out. This module is the gold-standard isolation in the rep
 - **Spell = MAGIC:** any range/row, targets `selectTarget` (nearest→lowHP→r→q), damage
   `floor(attack*power)` ignoring defense, cooldown keyed `spell:<id>`. Priority in
   `decideUnitAction`: **spell → skill → attack → move**.
-- **`SpellInput` carries NO visual fields** (fps/scale/duration/offsets/rotation live in `SpellDef` only).
+- **`SpellInput` carries NO visual fields** (fps/scaleX/scaleY/duration/offsets/rotation live in `SpellDef` only).
 - **Optionality = backward-compat:** `PartyMemberInput.spells?` defaults `[]` in `buildUnit`;
   a spell-less request is byte-identical to pre-spell output (sanity proves it).
 - Event `t` = `currentTime` at emission; several events share one `t`; consumers preserve emitted order.
