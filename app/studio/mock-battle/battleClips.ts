@@ -87,7 +87,6 @@ export function createBattleClips(ctx: BattleClipsCtx) {
     if (!rm) return null;
     for (const role of [
       "idle",
-      "move",
       "attack",
       "hit",
       "death",

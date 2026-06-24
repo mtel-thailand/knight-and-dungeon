@@ -66,6 +66,16 @@ export function isoHex(
   ];
 }
 
+/**
+ * Resolve a DB-stored image name to a loadable URL.
+ * - Full HTTP(S) URLs (Firebase Storage) are returned as-is.
+ * - Bare filenames are prefixed with "/assets/" so Pixi/HTML loads them from
+ *   the local `public/assets/` directory (backward-compatible with existing
+ *   rows that store the bare png name).
+ */
+export const assetUrl = (image: string) =>
+  image.startsWith("http") ? image : `/assets/${image}`;
+
 /** A fresh, identity per-character transform. */
 export const defaultCharConfig = (): CharConfigData => ({
   scaleX: 1,

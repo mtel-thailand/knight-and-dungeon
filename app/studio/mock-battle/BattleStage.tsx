@@ -21,7 +21,7 @@ import {
   DEFAULT_SPELL_TRANSITION,
   SPELL_FADE_MS,
 } from "@/lib/battle/types";
-import { isoPos, getHexRowsFromCounts } from "../studioHelpers";
+import { isoPos, getHexRowsFromCounts, assetUrl } from "../studioHelpers";
 import { createBattleClips } from "./battleClips";
 import { createBattleBoard } from "./battleBoard";
 import { Jersey_25 } from "next/font/google";
@@ -331,7 +331,6 @@ function BattleStage({
         if (rm)
           for (const role of [
             "idle",
-            "move",
             "attack",
             "hit",
             "death",
@@ -366,7 +365,7 @@ function BattleStage({
           if (!c.image || !c.frameData) return;
           if (!neededKeys.has(c.key)) return; // skip sheets this battle won't use
           try {
-            const texture = await Assets.load(`/assets/${c.image}`);
+            const texture = await Assets.load(assetUrl(c.image));
             if (destroyed) return;
             const sheet = new Spritesheet(texture, c.frameData);
             await sheet.parse();
@@ -925,16 +924,8 @@ function BattleStage({
         to: HexPosition,
         myId: number,
       ) {
-        if (su.hasArt) {
-          const mv = clipForRole(su.characterId, "move");
-          if (mv.length > 1) {
-            su.body.stop();
-            su.body.textures = mv;
-            su.body.loop = true;
-            su.body.animationSpeed = mv.length / (0.5 * TICKER_FPS);
-            su.body.play();
-          }
-        }
+        // Move animation intentionally removed (all units): the unit glides in
+        // its current idle pose while the position tween runs below.
         const a = pixelOf(from.q, from.r);
         const b = pixelOf(to.q, to.r);
         await tween(

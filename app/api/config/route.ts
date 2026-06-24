@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  readUserState,
   writeUserState,
+  deleteCharacter,
+} from "./db";
+import {
+  readUserState,
   listAnimations,
   getCharacterSeed,
-  deleteCharacter,
   getBattleStats,
   getCharacterRoleMaps,
   getMapConfig,
@@ -13,7 +15,7 @@ import {
   getCharacterSpells,
   getRoster,
   listCampaigns,
-} from "./db";
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,19 +28,32 @@ const DEFAULT_USER_STATE = {
 };
 
 export async function GET() {
-  const userState = readUserState() ?? DEFAULT_USER_STATE;
+  const userState = (await readUserState()) ?? DEFAULT_USER_STATE;
+  const [animations, characterSeed, battleStats, roleMaps, mapConfig, damageConfig, spells, characterSpells, campaigns, roster] =
+    await Promise.all([
+      listAnimations(),
+      getCharacterSeed(),
+      getBattleStats(),
+      getCharacterRoleMaps(),
+      getMapConfig(),
+      getDamageConfig(),
+      listSpells(),
+      getCharacterSpells(),
+      listCampaigns(),
+      getRoster(),
+    ]);
   return NextResponse.json({
     ...userState,
-    animations: listAnimations(),
-    characterSeed: getCharacterSeed(),
-    battleStats: getBattleStats(),
-    roleMaps: getCharacterRoleMaps(),
-    mapConfig: getMapConfig(),
-    damageConfig: getDamageConfig(),
-    spells: listSpells(),
-    characterSpells: getCharacterSpells(),
-    campaigns: listCampaigns(),
-    roster: getRoster(),
+    animations,
+    characterSeed,
+    battleStats,
+    roleMaps,
+    mapConfig,
+    damageConfig,
+    spells,
+    characterSpells,
+    campaigns,
+    roster,
   });
 }
 

@@ -14,6 +14,7 @@ Options:
   --label TEXT        UI display label (default: title-cased from animation-name)
   --columns N         Grid columns (default: 0 = auto, ceil(sqrt(frames)))
   --frame-size N      Force square NxN frames by scaling (default: 0 = native, no scale)
+  --fps N             Resample output to N fps (default: 24; 0 = keep native fps)
   --color HEX         Chroma key hex color without # (default: 00FF00)
   --similarity F      Chroma similarity 0-1 (default: 0.30)
   --blend F           Chroma blend 0-1 (default: 0.05)
@@ -169,6 +170,7 @@ def main():
     parser.add_argument("--label", help="UI display label (default: title-cased name)")
     parser.add_argument("--columns", type=int, default=0, help="Grid columns (default: 0 = auto sqrt)")
     parser.add_argument("--frame-size", type=int, default=0, help="Force square NxN by scaling (default: 0 = native)")
+    parser.add_argument("--fps", type=float, default=24.0, help="Resample output to N fps (default: 24; 0 = keep native fps)")
     parser.add_argument("--color", default="00FF00", help="Chroma key hex color (default: 00FF00)")
     parser.add_argument("--similarity", type=float, default=0.30, help="Chroma similarity (default: 0.30)")
     parser.add_argument("--blend", type=float, default=0.05, help="Chroma blend (default: 0.05)")
@@ -194,7 +196,18 @@ def main():
     # 1. Probe
     print(f"[1/3] Probing {input_path.name}...")
     info = probe_video(input_path)
-    nb_frames = info["nb_frames"]
+    src_fps = info["fps"]
+    src_frames = info["nb_frames"]
+
+    # Resample to a target fps (default 24) so sheets play at a known rate.
+    # --fps 0 keeps the source frame rate (and frame count) untouched.
+    if args.fps and args.fps > 0 and src_fps:
+        target_fps = args.fps
+        duration = src_frames / src_fps
+        nb_frames = max(1, round(duration * target_fps))
+    else:
+        target_fps = src_fps
+        nb_frames = src_frames
 
     # Keep native frame size unless --frame-size forces a square downscale.
     if args.frame_size > 0:
@@ -206,7 +219,7 @@ def main():
     # very tall strip that can exceed the GPU max texture size).
     cols = args.columns if args.columns > 0 else math.ceil(math.sqrt(nb_frames))
     rows = math.ceil(nb_frames / cols)
-    print(f"      {nb_frames} frames @ {info['fps']:.2f} fps  ({info['width']}x{info['height']})")
+    print(f"      {nb_frames} frames @ {target_fps:.2f} fps  (source {src_frames}f @ {src_fps:.2f} fps, {info['width']}x{info['height']})")
     print(f"      Grid: {cols}x{rows} -> {cols * frame_w}x{rows * frame_h}px (frame {frame_w}x{frame_h})")
 
     # 2. Build PNG spritesheet
@@ -216,6 +229,8 @@ def main():
         filters.append(f"chromakey=0x{args.color}:{args.similarity}:{args.blend}")
     if args.frame_size > 0:
         filters.append(f"scale={frame_w}:{frame_h}")
+    if args.fps and args.fps > 0:
+        filters.append(f"fps={target_fps}")
     filters.append(f"tile={cols}x{rows}")
 
     subprocess.run(
@@ -233,7 +248,7 @@ def main():
     print(f"      Inserted into SQLite ({db_path})")
 
     if args.character:
-        duration = round(nb_frames / info["fps"], 6) if info.get("fps") else None
+        duration = round(nb_frames / target_fps, 6) if target_fps else None
         upsert_character_animation(db_path, args.character, name, duration)
         print(f"      Attached to character '{args.character}' (duration {duration}s)")
 

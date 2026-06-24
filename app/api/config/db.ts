@@ -284,6 +284,15 @@ export function listAnimations(): AnimationRow[] {
   }));
 }
 
+/** Update only the `image` column of an existing animation row (used after
+ *  uploading the spritesheet PNG to Firebase Storage — keeps the on-disk PNG
+ *  in place for backward-compatible local-dev fallback). */
+export function updateAnimationImage(key: string, image: string): void {
+  getDb()
+    .prepare("UPDATE animations SET image = @image WHERE key = @key")
+    .run({ key, image });
+}
+
 export function upsertAnimation(a: {
   key: string;
   label: string;

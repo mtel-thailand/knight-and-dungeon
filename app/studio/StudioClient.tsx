@@ -26,6 +26,7 @@ import {
   slugify,
   getHexRowsFromCounts,
   defaultCharConfig,
+  assetUrl,
 } from "./studioHelpers";
 import { createStudioBattlePanel } from "./studioBattlePanel";
 import { createBattleBoard } from "./mock-battle/battleBoard";
@@ -188,7 +189,7 @@ export default function StudioClient() {
           if (!c.image || !c.frameData) return;
           try {
             const texture = (await Assets.load(
-              `/assets/${c.image}`,
+              assetUrl(c.image),
             )) as PixiTexture;
             if (destroyed) return;
             const sheet = new Spritesheet(texture, c.frameData);
@@ -1275,7 +1276,7 @@ export default function StudioClient() {
         seedDuration: number | null,
       ): Promise<number> {
         if (!row.image || !row.frameData) return -1;
-        const texture = (await Assets.load(`/assets/${row.image}`)) as PixiTexture;
+        const texture = (await Assets.load(assetUrl(row.image))) as PixiTexture;
         if (destroyed) return -1;
         const sheet = new Spritesheet(texture, row.frameData);
         await sheet.parse();

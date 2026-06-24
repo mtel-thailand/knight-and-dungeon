@@ -22,6 +22,11 @@ next-env.d.ts
 .DS_Store
 *.pem
 
+# firebase / gcp service-account credentials (never commit)
+*-firebase-adminsdk-*.json
+serviceAccount*.json
+firebase-service-account*.json
+
 # debug logs
 npm-debug.log*
 yarn-debug.log*
@@ -32,3 +37,6 @@ pnpm-debug.log*
 .env
 .env*.local
 .vercel
+
+# deepwork session state (local, not committed)
+.slim/deepwork/

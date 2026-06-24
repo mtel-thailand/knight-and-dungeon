@@ -5,6 +5,7 @@ import os from "os";
 import fs from "fs";
 import path from "path";
 import { upsertAnimation } from "../../config/db";
+import { uploadAsset } from "@/lib/firebase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -147,7 +148,21 @@ export async function POST(req: NextRequest) {
     };
 
     // 5) Upsert into the `animations` catalog (db.ts JSON-stringifies frameData).
-    upsertAnimation({ key, label, image: pngName, frameData: pixiJson });
+    //    Attempt Firebase upload; on failure fall back to the local bare filename
+    //    so local dev without valid credentials still works.
+    let imageUrl = pngName;
+    try {
+      const pngBuf = await fs.promises.readFile(outPng);
+      const destPath = `spritesheets/${pngName}`;
+      imageUrl = await uploadAsset(pngBuf, destPath);
+      console.log(`[firebase] uploaded ${destPath} → ${imageUrl}`);
+    } catch (fbErr) {
+      console.warn(
+        "[firebase] upload failed — falling back to local asset:",
+        fbErr instanceof Error ? fbErr.message : String(fbErr),
+      );
+    }
+    upsertAnimation({ key, label, image: imageUrl, frameData: pixiJson });
 
     await fs.promises.unlink(tmp).catch(() => {});
     return NextResponse.json({ ok: true, key, label, frames: nbFrames });

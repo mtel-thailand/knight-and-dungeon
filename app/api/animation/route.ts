@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
-import { mkdtemp, writeFile, rm } from "fs/promises";
+import { mkdtemp, writeFile, rm, readFile } from "fs/promises";
 import os from "os";
 import path from "path";
-import { listAnimations, getCharacterSeed, readUserState } from "../config/db";
+import { listAnimations, getCharacterSeed, readUserState, updateAnimationImage } from "../config/db";
+import { uploadAsset } from "@/lib/firebase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -110,6 +111,24 @@ export async function POST(req: NextRequest) {
   try {
     await writeFile(inputPath, Buffer.from(await video.arrayBuffer()));
     await runPipeline(inputPath, key, label, character);
+
+    // Upload the generated spritesheet to Firebase Storage.
+    // On failure (e.g. local dev without valid credentials) log a warning and
+    // keep the local bare filename — the loaders use assetUrl() which handles
+    // both Firebase URLs and local /assets/ prefixed paths.
+    const localPng = path.join(process.cwd(), "public/assets", `${key}-spritesheet.png`);
+    try {
+      const pngBuf = await readFile(localPng);
+      const destPath = `spritesheets/${key}-spritesheet.png`;
+      const url = await uploadAsset(pngBuf, destPath);
+      updateAnimationImage(key, url);
+      console.log(`[firebase] uploaded ${destPath} → ${url}`);
+    } catch (fbErr) {
+      console.warn(
+        "[firebase] upload failed — keeping local asset:",
+        fbErr instanceof Error ? fbErr.message : String(fbErr),
+      );
+    }
   } catch (err) {
     // Leak pipeline detail (Python tracebacks, abs paths) in dev only; always
     // surface the timeout message since it's actionable and not sensitive.

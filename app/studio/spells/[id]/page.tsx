@@ -25,7 +25,7 @@ import {
   DEFAULT_SPELL_TRANSITION,
   SPELL_TRANSITIONS,
 } from "@/lib/battle/types";
-import { getHexRowsFromCounts, isoHex, isoPos } from "../../studioHelpers";
+import { getHexRowsFromCounts, isoHex, isoPos, assetUrl } from "../../studioHelpers";
 import type { BootstrapPayload, CatalogEntry } from "../../studioTypes";
 import { SPELLS_PAGE_CSS } from "../spellsStyles";
 
@@ -162,7 +162,7 @@ export default function SpellEditPage() {
     img.onerror = () => {
       if (!cancelled) setSheet(null);
     };
-    img.src = `/assets/${entry.image}`;
+    img.src = assetUrl(entry.image);
     return () => {
       cancelled = true;
     };

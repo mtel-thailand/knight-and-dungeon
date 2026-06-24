@@ -23,18 +23,19 @@ import { CAMP_PAGE_CSS } from "./campStyles";
 type Phase = "idle" | "fighting" | "won" | "lost";
 
 /**
- * TEMP ("for now"): the camp player party is a single fixed `john`, regardless of
+ * TEMP ("for now"): the camp player party is a single fixed `blue`, regardless of
  * any saved roster. To restore multi-unit / party-select parties, rebuild this
- * from cfg.roster (and update both call sites). `john` is always seeded in
- * character_battle_stats; if it's somehow absent, the empty-party guard fires.
+ * from cfg.roster (and update both call sites). `blue` must exist in
+ * character_battle_stats — currently inserted directly into the DB, NOT in
+ * data/seed-battle.ts yet, so it won't survive a re-seed; else the guard fires.
  */
 function getCampParty(config: BootstrapConfig): PartyMemberInput[] {
-  const s = config.battleStats?.["john"];
+  const s = config.battleStats?.["blue"];
   if (!s) return [];
   return [{
-    characterId: "john",
+    characterId: "blue",
     stats: { ...s, attackType: s.attackType ?? "melee", skills: s.skills ?? [] },
-    spells: spellsFor("john", config),
+    spells: spellsFor("blue", config),
     position: deployHex("player", 0),
   }];
 }
@@ -96,7 +97,7 @@ export default function CampClient() {
             : null) ?? null;
         setActiveCampaign(camp);
 
-        // Build initial player party (TEMP: fixed single john — see getCampParty)
+        // Build initial player party (TEMP: fixed single blue — see getCampParty)
         setPlayerParty(getCampParty(cfg));
       } catch {
         // Offline — empty config
