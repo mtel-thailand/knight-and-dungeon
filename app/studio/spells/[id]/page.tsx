@@ -29,6 +29,13 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+/** Coerce to a finite number, falling back on NaN/±Infinity/missing. Unlike `??`,
+ *  this also rejects NaN — a NaN knob (e.g. a bad persisted value) would otherwise
+ *  poison the flight cycle and produce a NaN frame index. */
+function finiteOr(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) ? (value as number) : fallback;
+}
+
 /** Linear interpolation between a and b at t∈[0,1]. */
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -137,14 +144,16 @@ export default function SpellEditPage() {
     if (!ctx) return;
 
     const { img, frames } = sheet;
-    const fps = clamp(spell?.fps ?? DEFAULT_SPELL_FPS, SPELL_BOUNDS.fps.min, SPELL_BOUNDS.fps.max);
-    const scale = clamp(spell?.scale ?? 1, SPELL_BOUNDS.scale.min, SPELL_BOUNDS.scale.max);
+    // finiteOr (not ??) so a NaN/±Infinity persisted value can't leak through and
+    // poison the flight cycle (NaN cycle → NaN `t` → NaN frame index → crash).
+    const fps = clamp(finiteOr(spell?.fps, DEFAULT_SPELL_FPS), SPELL_BOUNDS.fps.min, SPELL_BOUNDS.fps.max);
+    const scale = clamp(finiteOr(spell?.scale, 1), SPELL_BOUNDS.scale.min, SPELL_BOUNDS.scale.max);
     const loop = spell?.loop ?? true;
     // Flight knobs — re-clamped here like fps/scale (the form clamps on edit too).
-    const duration = clamp(spell?.duration ?? DEFAULT_SPELL_DURATION, SPELL_BOUNDS.duration.min, SPELL_BOUNDS.duration.max);
-    const offX = clamp(spell?.offsetX ?? 0, SPELL_BOUNDS.offsetX.min, SPELL_BOUNDS.offsetX.max);
-    const offY = clamp(spell?.offsetY ?? 0, SPELL_BOUNDS.offsetY.min, SPELL_BOUNDS.offsetY.max);
-    const rotDeg = clamp(spell?.rotation ?? 0, SPELL_BOUNDS.rotation.min, SPELL_BOUNDS.rotation.max);
+    const duration = clamp(finiteOr(spell?.duration, DEFAULT_SPELL_DURATION), SPELL_BOUNDS.duration.min, SPELL_BOUNDS.duration.max);
+    const offX = clamp(finiteOr(spell?.offsetX, 0), SPELL_BOUNDS.offsetX.min, SPELL_BOUNDS.offsetX.max);
+    const offY = clamp(finiteOr(spell?.offsetY, 0), SPELL_BOUNDS.offsetY.min, SPELL_BOUNDS.offsetY.max);
+    const rotDeg = clamp(finiteOr(spell?.rotation, 0), SPELL_BOUNDS.rotation.min, SPELL_BOUNDS.rotation.max);
 
     // Drawn footprint of the largest frame, plus a left→right, slightly rising
     // flight path so the aim rotation actually reads on screen.
@@ -220,10 +229,19 @@ export default function SpellEditPage() {
       const e = easeInOutQuad(t / FLIGHT_MS);
       const cx = lerp(ax, bx, e);
       const cy = lerp(ay, by, e);
+      // The first rAF `now` can precede `t0` (frame-start timestamp) → `t` < 0, and
+      // a degenerate interval could be ≤0/non-finite — either makes the raw index
+      // negative/NaN. Floor to 0 then normalize into [0, len-1] so we never index
+      // frames[NaN] / frames[-1].
+      const raw =
+        Number.isFinite(frameInterval) && frameInterval > 0
+          ? Math.floor(t / frameInterval)
+          : 0;
       const fi = loop
-        ? Math.floor(t / frameInterval) % frames.length
-        : Math.min(frames.length - 1, Math.floor(t / frameInterval));
+        ? ((raw % frames.length) + frames.length) % frames.length
+        : Math.min(frames.length - 1, Math.max(0, raw));
       const f = frames[fi];
+      if (!f) return; // degenerate index → skip the sprite this frame, keep the field
       const dw = f.w * scale;
       const dh = f.h * scale;
       ctx.save();
@@ -348,13 +366,15 @@ export default function SpellEditPage() {
     ? animations.find((a) => a.key === animKey) ?? null
     : null;
   const canPreview = !!(previewEntry && previewEntry.image && previewEntry.frameData);
-  const fps = spell?.fps ?? DEFAULT_SPELL_FPS;
-  const scale = spell?.scale ?? 1;
+  // finiteOr (not ??) so a bad NaN value renders as the default in the sliders
+  // (and a Save then persists a valid number — self-healing the stored spell).
+  const fps = finiteOr(spell?.fps, DEFAULT_SPELL_FPS);
+  const scale = finiteOr(spell?.scale, 1);
   const loop = spell?.loop ?? true;
-  const duration = spell?.duration ?? DEFAULT_SPELL_DURATION;
-  const offsetX = spell?.offsetX ?? 0;
-  const offsetY = spell?.offsetY ?? 0;
-  const rotation = spell?.rotation ?? 0;
+  const duration = finiteOr(spell?.duration, DEFAULT_SPELL_DURATION);
+  const offsetX = finiteOr(spell?.offsetX, 0);
+  const offsetY = finiteOr(spell?.offsetY, 0);
+  const rotation = finiteOr(spell?.rotation, 0);
 
   return (
     <div className="spells-page">
