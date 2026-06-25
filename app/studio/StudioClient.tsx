@@ -1794,6 +1794,45 @@ export default function StudioClient() {
           nameSpan.className = "char-row-name";
           nameSpan.textContent = char.name;
 
+          // Avatar thumbnail + upload (calls /api/user/avatar)
+          const avatarBox = document.createElement("span");
+          avatarBox.className = "char-avatar-box";
+          const avatarImg = document.createElement("img");
+          avatarImg.className = "char-avatar-thumb";
+          avatarImg.alt = char.name;
+          avatarImg.style.display = "none";
+          avatarBox.appendChild(avatarImg);
+          const avatarInput = document.createElement("input");
+          avatarInput.type = "file";
+          avatarInput.accept = "image/*";
+          avatarInput.style.display = "none";
+          avatarInput.addEventListener("change", async () => {
+            const file = avatarInput.files?.[0];
+            const uid = (window as unknown as Record<string, string | null>).__studioUserId;
+            if (!file || !uid) return;
+            const fd = new FormData();
+            fd.append("image", file);
+            fd.append("userId", uid);
+            fd.append("characterId", char.id);
+            try {
+              const res = await fetch("/api/user/avatar", { method: "POST", body: fd });
+              const data = await res.json();
+              if (data.ok && data.url) avatarImg.src = data.url;
+              avatarImg.style.display = "block";
+            } catch {}
+            avatarInput.value = "";
+          });
+          avatarBox.appendChild(avatarInput);
+          const avatarBtn = document.createElement("button");
+          avatarBtn.className = "char-avatar-btn";
+          avatarBtn.textContent = "📷";
+          avatarBtn.title = "Upload avatar";
+          avatarBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            avatarInput.click();
+          });
+          avatarBox.appendChild(avatarBtn);
+
           const rowActions = document.createElement("div");
           rowActions.className = "char-row-actions";
 
@@ -1820,6 +1859,7 @@ export default function StudioClient() {
           rowActions.appendChild(editBtn);
           rowActions.appendChild(dupBtn);
           rowActions.appendChild(deleteBtn);
+          row.appendChild(avatarBox);
           row.appendChild(nameSpan);
           row.appendChild(rowActions);
           charList.appendChild(row);

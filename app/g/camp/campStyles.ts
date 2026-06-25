@@ -520,9 +520,10 @@ export const CAMP_PAGE_CSS = `
 .camp-char-card:hover { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); }
 .camp-char-card.on { border-color: #3b82f6; background: rgba(59,130,246,0.12); box-shadow: 0 0 12px rgba(59,130,246,0.25); }
 .camp-char-card:disabled { opacity: 0.35; cursor: not-allowed; }
+.camp-char-avatar { position: relative; display: inline-block; }
 .camp-char-avatar canvas { display: block; width: 64px; height: 64px; border-radius: 8px; margin: 0 auto; }
 .camp-char-avatar > div { margin: 0 auto; }
-.camp-char-avatar img { display: block; width: 64px; height: 64px; border-radius: 8px; margin: 0 auto; object-fit: cover; }
+.camp-avatar-upload-btn:hover { transform: scale(1.15); }
 .camp-char-name { display: block; font-size: 11px; font-weight: 600; margin-top: 6px; color: #c8d6e5; }
 .camp-char-card.on .camp-char-name { color: #60a5fa; }
 .camp-char-lv { display: block; font-size: 10px; color: #667788; margin-top: 2px; }

@@ -733,7 +733,7 @@ export default function CampClient() {
 
                 {/* Character selection grid — user-owned characters only */}
                 <div className="camp-char-grid">
-                  {(config?.characters ?? []).filter((ch) => ch.id in userCharacters).map((ch) => {
+                  {((config?.characters ?? []).filter((ch) => ch.id in userCharacters).map((ch) => {
                     const on = selectedCharIds.includes(ch.id);
                     const hasStats = !!config?.battleStats?.[ch.id];
                     const uc = userCharacters[ch.id];
@@ -771,7 +771,7 @@ export default function CampClient() {
                         {uc ? <span className="camp-char-lv">Lv.{uc.level}</span> : null}
                       </button>
                     );
-                  })}
+                  }))}
                 </div>
                 <button className="camp-start-btn" onClick={startCampaign}>
                   Start campaign

@@ -173,6 +173,14 @@ export const STUDIO_CSS = `
         .char-row.active { background: rgba(255,255,255,0.10); }
         .char-row-name { flex: 1; font-size: 13px; color: rgba(255,255,255,0.45); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .char-row.active .char-row-name { color: #ffffff; }
+        .char-avatar-box { position: relative; width: 28px; height: 28px; flex-shrink: 0; }
+        .char-avatar-thumb { width: 28px; height: 28px; border-radius: 4px; object-fit: cover; }
+        .char-avatar-btn {
+          position: absolute; inset: 0; background: rgba(0,0,0,0.35); border: none; border-radius: 4px;
+          cursor: pointer; font-size: 13px; line-height: 28px; text-align: center; padding: 0;
+          opacity: 0; transition: opacity 0.12s; color: #fff;
+        }
+        .char-avatar-box:hover .char-avatar-btn { opacity: 1; }
         .char-row-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s; flex-shrink: 0; }
         .char-row:hover .char-row-actions { opacity: 1; }
         .char-action-btn {
