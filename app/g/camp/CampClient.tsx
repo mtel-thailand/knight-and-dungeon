@@ -16,37 +16,56 @@ import { normalizeConfig, requestResolve, finalHpFromResult, useReplayRefs } fro
 import BattleStage, { deployHex, type BootstrapConfig } from "@/app/studio/mock-battle/BattleStage";
 import { useAuth } from "@/app/auth/AuthGuard";
 import GameScreenShell from "@/app/studio/mock-battle/GameScreenShell";
+import { assetUrl } from "@/app/studio/studioHelpers";
 import { CAMP_PAGE_CSS } from "./campStyles";
 
 // ────────────────────────────────────────────────────────────────────────────
 // State machine: idle → fighting → won / lost
 // ────────────────────────────────────────────────────────────────────────────
 
-/** Render a character's first idle animation frame on a canvas. */
+/** Render a character's idle animation as a Pixi AnimatedSprite. */
 function CharacterAvatar({ charId, name, animations }: { charId: string; name: string; animations: any[] }) {
-  const ref = useRef<HTMLCanvasElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const anim = animations.find((a: any) => a.key?.startsWith(charId + "-"));
-    if (!anim?.image || !anim?.frameData?.frames) return;
-    const frames = Object.values(anim.frameData.frames) as any[];
-    const first = frames[0]?.frame ?? { x: 0, y: 0, w: 64, h: 64 };
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const c = ref.current;
-      if (!c) return;
-      c.width = first.w;
-      c.height = first.h;
-      const ctx = c.getContext("2d");
-      if (!ctx) return;
-      ctx.clearRect(0, 0, first.w, first.h);
-      ctx.drawImage(img, first.x, first.y, first.w, first.h, 0, 0, first.w, first.h);
+    if (!anim?.image || !anim?.frameData) return;
+    let destroyed = false;
+    let pixiApp: any = null;
+    let sprite: any = null;
+    (async () => {
+      const { Application, Assets, Spritesheet, AnimatedSprite } = await import("pixi.js");
+      if (destroyed) return;
+      const el = ref.current;
+      if (!el) return;
+      el.innerHTML = "";
+      pixiApp = new Application();
+      await pixiApp.init({ resizeTo: el, backgroundAlpha: 0, antialias: true });
+      if (destroyed) { pixiApp.destroy(); return; }
+      el.appendChild(pixiApp.canvas);
+      const url = assetUrl(anim.image);
+      const texture = await Assets.load(url);
+      if (destroyed) { pixiApp.destroy(); return; }
+      const sheet = new Spritesheet(texture, anim.frameData);
+      await sheet.parse();
+      const frames = Object.keys(sheet.data.frames).map((n: string) => sheet.textures[n]);
+      sprite = new AnimatedSprite(frames);
+      sprite.anchor.set(0.5);
+      const s = 64 / (Math.max(sheet.data.meta?.size?.w ?? 64, sheet.data.meta?.size?.h ?? 64) || 64);
+      sprite.scale.set(s, s);
+      sprite.animationSpeed = frames.length / (2 * 60);
+      sprite.play();
+      pixiApp.stage.addChild(sprite);
+    })();
+    return () => {
+      destroyed = true;
+      if (sprite) { try { sprite.destroy(); } catch {} }
+      if (pixiApp) { try { pixiApp.destroy(); } catch {} }
+      if (ref.current) ref.current.innerHTML = "";
     };
-    img.src = anim.image.startsWith("http") ? anim.image : `/assets/${anim.image}`;
   }, [charId, animations]);
   return (
     <div className="camp-char-avatar">
-      <canvas ref={ref} />
+      <div ref={ref} style={{ width: 64, height: 64 }} />
       <span className="camp-char-name">{name}</span>
     </div>
   );
