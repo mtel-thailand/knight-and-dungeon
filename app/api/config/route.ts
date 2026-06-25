@@ -11,6 +11,7 @@ import {
   getCharacterRoleMaps,
   getMapConfig,
   getDamageConfig,
+  getSpellTextConfig,
   listSpells,
   getCharacterSpells,
   getRoster,
@@ -33,7 +34,7 @@ const DEFAULT_USER_STATE = {
 
 export async function GET() {
   const userState = (await readUserState()) ?? DEFAULT_USER_STATE;
-  const [animations, characterSeed, battleStats, roleMaps, mapConfig, damageConfig, spells, characterSpells, campaigns, roster] =
+  const [animations, characterSeed, battleStats, roleMaps, mapConfig, damageConfig, spellTextConfig, spells, characterSpells, campaigns, roster] =
     await Promise.all([
       listAnimations(),
       getCharacterSeed(),
@@ -41,6 +42,7 @@ export async function GET() {
       getCharacterRoleMaps(),
       getMapConfig(),
       getDamageConfig(),
+      getSpellTextConfig(),
       listSpells(),
       getCharacterSpells(),
       listCampaigns(),
@@ -54,6 +56,7 @@ export async function GET() {
     roleMaps,
     mapConfig,
     damageConfig,
+    spellTextConfig,
     spells,
     characterSpells,
     campaigns,
@@ -71,12 +74,12 @@ export async function POST(req: NextRequest) {
   }
   // Persist only mutable user state; the catalog (animations + characterSeed),
   // battle data (battleStats + roleMaps + spells + characterSpells), board
-  // layout (mapConfig), the damage-number config (damageConfig), and the
-  // mock-battle roster (roster) are server-managed and must never be written
+  // layout (mapConfig), the damage-number config (damageConfig), spell-name
+  // callout config (spellTextConfig), and the mock-battle roster (roster) are server-managed and must never be written
   // back from the client. battleStats/roleMaps/characterSpells are edited via
   // POST /api/config/battle; the spell catalog via POST/DELETE /api/config/spell;
   // mapConfig via POST /api/config/map; damageConfig via POST /api/config/damage;
-  // roster via POST /api/config/roster.
+  // spellTextConfig via POST /api/config/spell-text; roster via POST /api/config/roster.
   const userState = { ...body };
   delete userState.animations;
   delete userState.characterSeed;
@@ -84,6 +87,7 @@ export async function POST(req: NextRequest) {
   delete userState.roleMaps;
   delete userState.mapConfig;
   delete userState.damageConfig;
+  delete userState.spellTextConfig;
   delete userState.spells;
   delete userState.characterSpells;
   delete userState.campaigns;

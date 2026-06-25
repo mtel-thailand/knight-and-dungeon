@@ -20,6 +20,7 @@ import type {
   CharacterRoleMap,
   MapConfig,
   DamageConfig,
+  SpellTextConfig,
   SpellDef,
   CampaignDef,
 } from "@/lib/battle/types";
@@ -36,6 +37,7 @@ type DbReadAdapter = {
   getCharacterRoleMaps(): Promise<Record<string, CharacterRoleMap>>;
   getMapConfig(): Promise<MapConfig>;
   getDamageConfig(): Promise<DamageConfig>;
+  getSpellTextConfig(): Promise<SpellTextConfig>;
   listSpells(): Promise<SpellDef[]>;
   getCharacterSpells(): Promise<Record<string, string[]>>;
   listCampaigns(): Promise<CampaignDef[]>;
@@ -85,6 +87,10 @@ export async function getMapConfig(): Promise<MapConfig> {
 
 export async function getDamageConfig(): Promise<DamageConfig> {
   return (await impl()).getDamageConfig();
+}
+
+export async function getSpellTextConfig(): Promise<SpellTextConfig> {
+  return (await impl()).getSpellTextConfig();
 }
 
 export async function listSpells(): Promise<SpellDef[]> {

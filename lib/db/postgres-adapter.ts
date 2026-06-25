@@ -19,13 +19,14 @@ import type {
   CharacterRoleMap,
   MapConfig,
   DamageConfig,
+  SpellTextConfig,
   SpellDef,
   SpellType,
   SpellTransition,
   CampaignDef,
 } from "@/lib/battle/types";
 import type { AnimationRow, CharacterSeed } from "@/app/api/config/db";
-import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG } from "@/lib/battle/types";
+import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_TEXT_CONFIG } from "@/lib/battle/types";
 
 // ---------------------------------------------------------------------------
 // Pool singleton (same pattern as app/api/config/db.ts)
@@ -217,6 +218,21 @@ export async function getDamageConfig(): Promise<DamageConfig> {
     return { ...DEFAULT_DAMAGE_CONFIG, ...parsed };
   } catch {
     return DEFAULT_DAMAGE_CONFIG;
+  }
+}
+
+/** The persisted spell-name callout config, merged over DEFAULT_SPELL_TEXT_CONFIG. */
+export async function getSpellTextConfig(): Promise<SpellTextConfig> {
+  const pool = getPool();
+  const result = await pool.query<{ data: string }>(
+    `SELECT data FROM spell_text_config WHERE id = 1`,
+  );
+  if (result.rows.length === 0) return DEFAULT_SPELL_TEXT_CONFIG;
+  try {
+    const parsed = JSON.parse(result.rows[0].data) as Partial<SpellTextConfig>;
+    return { ...DEFAULT_SPELL_TEXT_CONFIG, ...parsed };
+  } catch {
+    return DEFAULT_SPELL_TEXT_CONFIG;
   }
 }
 
