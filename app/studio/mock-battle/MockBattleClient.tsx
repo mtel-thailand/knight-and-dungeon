@@ -705,7 +705,6 @@ export default function MockBattleClient() {
               center={
                 config && result ? (
                   <BattleStage
-                    key={battleKey}
                     result={result}
                     config={config}
                     controlsRef={controlsRef}

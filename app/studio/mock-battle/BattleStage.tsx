@@ -249,61 +249,56 @@ function BattleStage({
   const localPausedRef = useRef(false);
   const activePausedRef = pausedRef ?? localPausedRef;
 
+  // ---- Persistent Pixi instance (survives re-fights) ----
+  // Effect 1: create Pixi once, load UI spritesheets, return cleanup = destroy on unmount.
+  // Effect 2: load battle-specific data & replay on every result/config change.
+  const pixiCtx = useRef<{
+    app: any;
+    wrapper: HTMLDivElement;
+    manaTank: any;
+    pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } | null>(null);
+
+  // Effect 1 — Pixi + UI (runs once)
   useEffect(() => {
     const container = containerRef.current!;
+    let destroyed = false;
     let pixiApp: any = null;
     let wrapper: HTMLDivElement | null = null;
-    let destroyed = false;
-    let genId = 0; // previewGenId-style cancel token
+    let pauseRaf = 0;
     const cleanups: Array<() => void> = [];
 
-    async function init() {
-      const { Application, Assets, AnimatedSprite, Graphics, Spritesheet, Text, Container } =
-        (await import("pixi.js")) as any;
+    async function initPixi() {
+      const pixi = await import("pixi.js");
+      const { Application, Assets, AnimatedSprite, Spritesheet } = pixi as any;
       if (destroyed) return;
 
       wrapper = document.createElement("div");
       wrapper.style.cssText = "position:absolute; inset:0;";
       container.appendChild(wrapper);
 
-      // Cap the canvas render scale (applied to `resolution` below). Lower = fewer
-      // pixels filled per frame (the biggest GPU lever here) at the cost of softer
-      // text/vector edges; the pixel-art sprites tolerate a lower cap well. 2 = no
-      // change on a typical 2x-retina display — drop to 1.5 / 1 and hard-reload to
-      // A/B the perf-vs-crispness trade-off.
       const MAX_RENDER_SCALE = 2;
       pixiApp = new Application();
       await pixiApp.init({
         resizeTo: wrapper,
         backgroundAlpha: 0,
         antialias: true,
-        // Render at the device pixel density (crisp text/vectors on HiDPI; without
-        // it the canvas rasterizes at 1x and is CSS-upscaled -> blurry), but CAP
-        // it so high-DPR phones don't pay to fill ~9x the pixels every frame.
         resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_SCALE),
         autoDensity: true,
       });
-      if (destroyed) {
-        pixiApp.destroy();
-        return;
-      }
+      if (destroyed) { pixiApp.destroy(); return; }
       wrapper.appendChild(pixiApp.canvas);
 
-      // Pause/resume Pixi's ticker so AnimatedSprite frame playback freezes while
-      // the replay's own waits/tweens are paused below.
-      let pauseRaf = 0;
-      const syncTickerPause = () => {
-        if (pixiApp?.ticker) pixiApp.ticker.speed = activePausedRef.current ? 0 : 1;
-        if (!destroyed) pauseRaf = requestAnimationFrame(syncTickerPause);
+      // Ticker pause
+      const syncPause = () => {
+        if (pixiApp?.ticker) pixiApp.ticker.speed = 0;
+        if (!destroyed) pauseRaf = requestAnimationFrame(syncPause);
       };
-      syncTickerPause();
-      cleanups.push(() => {
-        cancelAnimationFrame(pauseRaf);
-        if (pixiApp?.ticker) pixiApp.ticker.speed = 1;
-      });
+      syncPause();
+      cleanups.push(() => { cancelAnimationFrame(pauseRaf); if (pixiApp?.ticker) pixiApp.ticker.speed = 1; });
 
-      // ---- Load UI spritesheets FIRST (mana tank, etc.) — these are small,
-      // fast-loading sheets that should render before battle assets.
+      // ---- Load UI spritesheets FIRST (mana tank) ----
       let manaFrames: any[] | null = null;
       let manaTank: any | null = null;
       try {
@@ -319,13 +314,8 @@ function BattleStage({
       } catch (err) {
         console.warn("mock-battle: mana tank sheet failed", err);
       }
-      if (destroyed) {
-        pixiApp.destroy();
-        return;
-      }
+      if (destroyed) { pixiApp.destroy(); return; }
 
-      // UI elements that depend on parsed frames — create immediately so they
-      // render as static before the battle loads.
       if (manaFrames && manaFrames.length > 0) {
         manaTank = new AnimatedSprite(manaFrames);
         manaTank.anchor.set(0.5);
@@ -338,20 +328,46 @@ function BattleStage({
         pixiApp.stage.addChild(manaTank);
       }
 
-      // Load the pixel display font before any Pixi text is rasterized — canvas
-      // text doesn't trigger the CSS @font-face fetch, so without this the first
-      // damage numbers would flash in the fallback font (and never re-render).
+      // Font load
       try {
         await document.fonts.load(`400 32px ${dmgFont.style.fontFamily}`);
-      } catch {
-        /* fall back to the default font */
-      }
-      if (destroyed) {
-        pixiApp.destroy();
-        return;
-      }
+      } catch { /* fallback */ }
+      if (destroyed) { pixiApp.destroy(); return; }
 
-      // ---- Frames: build once, share Texture[] across every unit (122-159) ----
+      // Store in ref for Effect 2
+      pixiCtx.current = { app: pixiApp, wrapper, manaTank, pixi };
+    }
+
+    initPixi().catch(console.error);
+
+    return () => {
+      destroyed = true;
+      cancelAnimationFrame(pauseRaf);
+      for (const c of cleanups) c();
+      if (pixiApp) {
+        try { pixiApp.destroy(); } catch { /* ignore */ }
+      }
+      pixiCtx.current = null;
+      container.innerHTML = "";
+    };
+  }, []);
+
+  // Effect 2 — battle load + replay (runs on every result/config change)
+  useEffect(() => {
+    const ctx = pixiCtx.current;
+    if (!ctx || !result) return;
+
+    const { app: pixiApp, wrapper } = ctx;
+    const container = containerRef.current!;
+    let destroyed = false;
+    let genId = 0;
+    const cleanups: Array<() => void> = [];
+
+    async function runBattle() {
+      const pixi = ctx!.pixi;
+      const { Application: _, Assets, AnimatedSprite, Graphics, Spritesheet, Text, Container } = pixi;
+      const manaTank = ctx!.manaTank;
+
       const catalog: any[] = config.animations ?? [];
       const framesByKey: Record<string, any[]> = {};
       // ---- Load only the sheets THIS battle needs ----
@@ -1299,7 +1315,7 @@ function BattleStage({
       runReplay().catch(console.error);
     }
 
-    init().catch(console.error);
+    runBattle().catch(console.error);
 
     return () => {
       destroyed = true;
@@ -1318,17 +1334,9 @@ function BattleStage({
       redrawHealthBarsRef.current = () => {};
       applyMapRef.current = () => {};
       gridVisibleRef.current = null;
-      if (pixiApp) {
-        try {
-          pixiApp.destroy();
-        } catch {
-          /* ignore */
-        }
-      }
-      if (wrapper?.parentNode) wrapper.parentNode.removeChild(wrapper);
-      container.innerHTML = "";
+      // DON'T destroy pixiApp — it's owned by Effect 1 and persists across re-fights.
+      // DON'T clear container innerHTML — that would remove the Pixi canvas too.
     };
-    // Re-fight passes a fresh `result` object -> teardown + rebuild.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result]);
 
