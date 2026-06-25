@@ -683,12 +683,10 @@ function BattleStage({
       if (manaFrames && manaFrames.length > 0) {
         manaTank = new AnimatedSprite(manaFrames);
         manaTank.anchor.set(0.5);
-        // Position at bottom-center of screen
-        manaTank.position.set(pixiApp.screen.width / 2, pixiApp.screen.height - 100);
+        manaTank.scale.set(0.5);
+        manaTank.position.set(60, 60);
         manaTank.zIndex = 9998;
         manaTank.loop = false;
-        // 97 frames at ~60fps ticker = ~1.6s
-        manaTank.animationSpeed = manaFrames.length / (97 / 60);
         manaTank.stop();
         pixiApp.stage.addChild(manaTank);
       }
