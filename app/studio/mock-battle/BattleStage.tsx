@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import type {
   BattleEvent,
   BattleEventRole,
@@ -259,6 +259,7 @@ function BattleStage({
     pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } | null>(null);
+  const [pixiReady, setPixiReady] = useState(false);
 
   // Effect 1 — Pixi + UI (runs once)
   useEffect(() => {
@@ -336,6 +337,7 @@ function BattleStage({
 
       // Store in ref for Effect 2
       pixiCtx.current = { app: pixiApp, wrapper, manaTank, pixi };
+      setPixiReady(true);
     }
 
     initPixi().catch(console.error);
@@ -1338,7 +1340,7 @@ function BattleStage({
       // DON'T clear container innerHTML — that would remove the Pixi canvas too.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result]);
+  }, [result, pixiReady]);
 
   return <div ref={containerRef} className="mb-stage" />;
 }
