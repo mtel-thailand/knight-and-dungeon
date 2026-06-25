@@ -43,6 +43,9 @@ export {
   upsertBattleReward,
   deleteBattleReward,
   pruneBattleRewards,
+  initUser,
+  getUserCharacters,
+  getUserStats,
 } from "./adapter";
 
 export type {

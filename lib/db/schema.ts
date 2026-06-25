@@ -197,3 +197,37 @@ export const battleRewards = pgTable("battle_rewards", {
   effectValue: doublePrecision("effect_value").notNull().default(10),
   sortOrder: integer("sort_order").notNull().default(0),
 });
+
+// ---------------------------------------------------------------------------
+// user_characters — per-user owned character roster (persists across battles)
+// ---------------------------------------------------------------------------
+export const userCharacters = pgTable(
+  "user_characters",
+  {
+    userId: text("user_id").notNull(),
+    characterId: text("character_id").notNull(),
+    level: integer("level").notNull().default(1),
+    exp: integer("exp").notNull().default(0),
+    hp: integer("hp").notNull(),
+    attack: integer("attack").notNull(),
+    defense: integer("defense").notNull(),
+    actionSpeed: doublePrecision("action_speed").notNull(),
+    range: integer("range").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
+);
+
+// ---------------------------------------------------------------------------
+// user_stats — meta progression (wins, losses, total exp)
+// ---------------------------------------------------------------------------
+export const userStats = pgTable(
+  "user_stats",
+  {
+    userId: text("user_id").primaryKey().notNull(),
+    totalWins: integer("total_wins").notNull().default(0),
+    totalLosses: integer("total_losses").notNull().default(0),
+    totalExp: integer("total_exp").notNull().default(0),
+    totalKills: integer("total_kills").notNull().default(0),
+  },
+);

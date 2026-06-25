@@ -24,6 +24,16 @@ export default function LoginPage() {
     setBusy(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      // Initialize user data (starter character, stats) — idempotent
+      const idToken = await auth.currentUser?.getIdToken();
+      if (idToken) {
+        const decoded = JSON.parse(atob(idToken.split(".")[1]));
+        await fetch("/api/user/init", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: decoded.sub }),
+        });
+      }
       router.replace("/auth/campaigns");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";

@@ -442,9 +442,59 @@ export async function upsertRoleMap(
         .onConflictDoUpdate({
           target: [schema.characterEventRoles.characterId, schema.characterEventRoles.role],
           set: { actionId: sql`excluded.action_id` },
-        });
+      });
     }
   });
+}
+
+// ---- user data (auth) ----
+
+/** Seed a new user with starter character "blue" and empty stats. */
+export async function initUser(userId: string): Promise<void> {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    // Insert starter character
+    await tx.insert(schema.userCharacters).values({
+      userId,
+      characterId: "blue",
+      level: 1,
+      exp: 0,
+      hp: 200,
+      attack: 20,
+      defense: 0,
+      actionSpeed: 100,
+      range: 1,
+      sortOrder: 0,
+    }).onConflictDoNothing({ target: [schema.userCharacters.userId, schema.userCharacters.characterId] });
+    // Insert stats row
+    await tx.insert(schema.userStats).values({
+      userId,
+      totalWins: 0,
+      totalLosses: 0,
+      totalExp: 0,
+      totalKills: 0,
+    }).onConflictDoNothing({ target: schema.userStats.userId });
+  });
+}
+
+/** Get all characters owned by a user. */
+export async function getUserCharacters(userId: string) {
+  const db = getDb();
+  return db
+    .select()
+    .from(schema.userCharacters)
+    .where(eq(schema.userCharacters.userId, userId))
+    .orderBy(schema.userCharacters.sortOrder);
+}
+
+/** Get meta stats for a user. */
+export async function getUserStats(userId: string) {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.userStats)
+    .where(eq(schema.userStats.userId, userId));
+  return rows[0] ?? null;
 }
 
 /** Remove battle rows for any character NOT in keepIds. Empty keepIds clears all. */

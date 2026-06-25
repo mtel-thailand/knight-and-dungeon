@@ -117,3 +117,31 @@ CREATE TABLE IF NOT EXISTS battle_rewards (
     effect_value DOUBLE PRECISION NOT NULL DEFAULT 10,
     sort_order   INTEGER NOT NULL DEFAULT 0
 );
+
+-- ---------------------------------------------------------------------------
+-- user_characters — per-user owned character roster (persists across battles)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_characters (
+    user_id      TEXT NOT NULL,
+    character_id TEXT NOT NULL,
+    level        INTEGER NOT NULL DEFAULT 1,
+    exp          INTEGER NOT NULL DEFAULT 0,
+    hp           INTEGER NOT NULL,
+    attack       INTEGER NOT NULL,
+    defense      INTEGER NOT NULL,
+    action_speed DOUBLE PRECISION NOT NULL,
+    "range"      INTEGER NOT NULL,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, character_id)
+);
+
+-- ---------------------------------------------------------------------------
+-- user_stats — meta progression (wins, losses, total exp)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_stats (
+    user_id     TEXT PRIMARY KEY,
+    total_wins  INTEGER NOT NULL DEFAULT 0,
+    total_losses INTEGER NOT NULL DEFAULT 0,
+    total_exp    INTEGER NOT NULL DEFAULT 0,
+    total_kills  INTEGER NOT NULL DEFAULT 0
+);
