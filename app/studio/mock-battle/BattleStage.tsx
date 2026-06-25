@@ -411,6 +411,26 @@ function BattleStage({
         return;
       }
 
+      // ---- Load UI spritesheets (mana tank, etc.) ----
+      let manaFrames: any[] | null = null;
+      try {
+        const manaTexture = await Assets.load("/assets/ui/mana-tank-spritesheet.png");
+        if (destroyed) { pixiApp.destroy(); return; }
+        const manaResp = await fetch("/assets/ui/mana-tank-spritesheet.json");
+        const manaJson = await manaResp.json();
+        const manaSheet = new Spritesheet(manaTexture, manaJson);
+        await manaSheet.parse();
+        manaFrames = Object.keys(manaSheet.data.frames).map(
+          (n: string) => manaSheet.textures[n],
+        );
+      } catch (err) {
+        console.warn("mock-battle: mana tank sheet failed", err);
+      }
+      if (destroyed) {
+        pixiApp.destroy();
+        return;
+      }
+
       // battleClips extracted -> ./battleClips (Phase 2a)
       const {
         framesForKey,
@@ -656,6 +676,21 @@ function BattleStage({
         // (defaults reproduce the original geometry exactly).
         drawHealthBar(sprites[u.id]);
         initialById[u.id] = { q: u.position.q, r: u.position.r, hp: u.hp };
+      }
+
+      // ---- Mana tank overlay (screen-space) ----
+      let manaTank: any | null = null;
+      if (manaFrames && manaFrames.length > 0) {
+        manaTank = new AnimatedSprite(manaFrames);
+        manaTank.anchor.set(0.5);
+        // Position at bottom-center of screen
+        manaTank.position.set(pixiApp.screen.width / 2, pixiApp.screen.height - 100);
+        manaTank.zIndex = 9998;
+        manaTank.loop = false;
+        // 97 frames at ~60fps ticker = ~1.6s
+        manaTank.animationSpeed = manaFrames.length / (97 / 60);
+        manaTank.play();
+        pixiApp.stage.addChild(manaTank);
       }
 
       // Apply the loaded view config to the freshly-built units (scale to the live
@@ -1214,6 +1249,11 @@ function BattleStage({
           su.hpFill.scale.x = hpRatio;
           su.hpFill.tint = hpColor(hpRatio);
           setIdle(su);
+        }
+        // Reset mana tank animation on replay
+        if (manaTank) {
+          manaTank.currentFrame = 0;
+          manaTank.play();
         }
       }
 
