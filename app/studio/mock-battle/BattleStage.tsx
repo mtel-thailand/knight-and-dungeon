@@ -661,7 +661,7 @@ function BattleStage({
         const cfg = dmgCfgRef.current;
         const barW = TW0 * cfg.barWidth;
         const barH = cfg.barHeight * pxScale;
-        const barY = -su.dispH - cfg.barGap * pxScale;
+        const barY = su.dispH * 0.15 + cfg.barGap * pxScale;
         su.barBg.clear();
         su.barBg
           .roundRect(-barW / 2 - 1, barY - 1, barW + 2, barH + 2, 3)
@@ -672,9 +672,10 @@ function BattleStage({
           .fill({ color: su.team === "player" ? 0x38e0c4 : 0xff5d73, alpha: 0.8 });
         const hpRatio = Math.max(0.0001, Math.min(1, su.hp / su.maxHp));
         su.hpFill.clear();
-        su.hpFill.roundRect(0, barY, barW, barH, 2).fill({ color: 0xffffff });
+        // Fill from bottom: position fill at bottom of bar, height = hpRatio * barH
+        const fillH = barH * hpRatio;
+        su.hpFill.roundRect(0, barY + barH - fillH, barW, fillH, 2).fill({ color: 0xffffff });
         su.hpFill.position.x = -barW / 2;
-        su.hpFill.scale.x = hpRatio;
         su.hpFill.tint = hpColor(hpRatio);
         su.hpFill.visible = !su.dead;
       }
