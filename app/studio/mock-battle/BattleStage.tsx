@@ -302,6 +302,42 @@ function BattleStage({
         if (pixiApp?.ticker) pixiApp.ticker.speed = 1;
       });
 
+      // ---- Load UI spritesheets FIRST (mana tank, etc.) — these are small,
+      // fast-loading sheets that should render before battle assets.
+      let manaFrames: any[] | null = null;
+      let manaTank: any | null = null;
+      try {
+        const manaTexture = await Assets.load("/assets/ui/mana-tank-spritesheet.png");
+        if (destroyed) { pixiApp.destroy(); return; }
+        const manaResp = await fetch("/assets/ui/mana-tank-spritesheet.json");
+        const manaJson = await manaResp.json();
+        const manaSheet = new Spritesheet(manaTexture, manaJson);
+        await manaSheet.parse();
+        manaFrames = Object.keys(manaSheet.data.frames).map(
+          (n: string) => manaSheet.textures[n],
+        );
+      } catch (err) {
+        console.warn("mock-battle: mana tank sheet failed", err);
+      }
+      if (destroyed) {
+        pixiApp.destroy();
+        return;
+      }
+
+      // UI elements that depend on parsed frames — create immediately so they
+      // render as static before the battle loads.
+      if (manaFrames && manaFrames.length > 0) {
+        manaTank = new AnimatedSprite(manaFrames);
+        manaTank.anchor.set(0.5);
+        manaTank.scale.set(0.5);
+        manaTank.position.set(60, 60);
+        manaTank.zIndex = 9998;
+        manaTank.loop = false;
+        manaTank.currentFrame = 0;
+        manaTank.stop();
+        pixiApp.stage.addChild(manaTank);
+      }
+
       // Load the pixel display font before any Pixi text is rasterized — canvas
       // text doesn't trigger the CSS @font-face fetch, so without this the first
       // damage numbers would flash in the fallback font (and never re-render).
@@ -406,26 +442,6 @@ function BattleStage({
           }
         }),
       );
-      if (destroyed) {
-        pixiApp.destroy();
-        return;
-      }
-
-      // ---- Load UI spritesheets (mana tank, etc.) ----
-      let manaFrames: any[] | null = null;
-      try {
-        const manaTexture = await Assets.load("/assets/ui/mana-tank-spritesheet.png");
-        if (destroyed) { pixiApp.destroy(); return; }
-        const manaResp = await fetch("/assets/ui/mana-tank-spritesheet.json");
-        const manaJson = await manaResp.json();
-        const manaSheet = new Spritesheet(manaTexture, manaJson);
-        await manaSheet.parse();
-        manaFrames = Object.keys(manaSheet.data.frames).map(
-          (n: string) => manaSheet.textures[n],
-        );
-      } catch (err) {
-        console.warn("mock-battle: mana tank sheet failed", err);
-      }
       if (destroyed) {
         pixiApp.destroy();
         return;
@@ -676,20 +692,6 @@ function BattleStage({
         // (defaults reproduce the original geometry exactly).
         drawHealthBar(sprites[u.id]);
         initialById[u.id] = { q: u.position.q, r: u.position.r, hp: u.hp };
-      }
-
-      // ---- Mana tank overlay (screen-space) ----
-      let manaTank: any | null = null;
-      if (manaFrames && manaFrames.length > 0) {
-        manaTank = new AnimatedSprite(manaFrames);
-        manaTank.anchor.set(0.5);
-        manaTank.scale.set(0.5);
-        manaTank.position.set(60, 60);
-        manaTank.zIndex = 9998;
-        manaTank.loop = false;
-        manaTank.currentFrame = 0;
-        manaTank.stop();
-        pixiApp.stage.addChild(manaTank);
       }
 
       // Apply the loaded view config to the freshly-built units (scale to the live
