@@ -256,7 +256,8 @@ function BattleStage({
     app: any;
     wrapper: HTMLDivElement;
     manaTank: any;
-    pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any };
+    crystalShardTex: any;
+    pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any; Sprite: any };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } | null>(null);
   const [pixiReady, setPixiReady] = useState(false);
@@ -302,6 +303,7 @@ function BattleStage({
       // ---- Load UI spritesheets FIRST (mana tank) ----
       let manaFrames: any[] | null = null;
       let manaTank: any | null = null;
+      let crystalShardTex: any | null = null;
       try {
         const manaTexture = await Assets.load("/assets/ui/mana-tank-spritesheet.png");
         if (destroyed) { pixiApp.destroy(); return; }
@@ -314,6 +316,14 @@ function BattleStage({
         );
       } catch (err) {
         console.warn("mock-battle: mana tank sheet failed", err);
+      }
+      if (destroyed) { pixiApp.destroy(); return; }
+
+      // Load crystal shard texture (single image, no spritesheet)
+      try {
+        crystalShardTex = await Assets.load("/assets/ui/crystal-shard.png");
+      } catch (err) {
+        console.warn("mock-battle: crystal shard load failed", err);
       }
       if (destroyed) { pixiApp.destroy(); return; }
 
@@ -336,7 +346,7 @@ function BattleStage({
       if (destroyed) { pixiApp.destroy(); return; }
 
       // Store in ref for Effect 2
-      pixiCtx.current = { app: pixiApp, wrapper, manaTank, pixi };
+      pixiCtx.current = { app: pixiApp, wrapper, manaTank, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -367,8 +377,9 @@ function BattleStage({
 
     async function runBattle() {
       const pixi = ctx!.pixi;
-      const { Application: _, Assets, AnimatedSprite, Graphics, Spritesheet, Text, Container } = pixi;
+      const { Application: _, Assets, AnimatedSprite, Graphics, Spritesheet, Text, Container, Sprite } = pixi;
       const manaTank = ctx!.manaTank;
+      const crystalShardTex = ctx!.crystalShardTex;
 
       const catalog: any[] = config.animations ?? [];
       const framesByKey: Record<string, any[]> = {};
@@ -1150,6 +1161,42 @@ function BattleStage({
         }
       }
 
+      // ---- Crystal shard: drop from dying enemy, fly to mana gauge ----
+      async function spawnCrystalShard(x: number, y: number, myId: number) {
+        if (!crystalShardTex) return;
+        const shard = new Sprite(crystalShardTex);
+        shard.anchor.set(0.5);
+        shard.position.set(x, y);
+        shard.alpha = 0;
+        shard.zIndex = 9999;
+        pixiApp.stage.addChild(shard);
+        cleanups.push(() => { try { shard.destroy(); } catch {} });
+        // Phase 1: fade in + drop down
+        await tween(250, (p) => {
+          shard.alpha = Math.min(1, p * 3);
+          shard.position.y = y + 60 * easeOutCubic(p);
+        }, myId);
+        if (destroyed || genId !== myId) return;
+        // Phase 2: fly to mana tank (top-left 60,60) + shrink + fade out
+        const startX = shard.position.x;
+        const startY = shard.position.y;
+        const tx = 60; const ty = 60;
+        await tween(400, (p) => {
+          const e = easeOutCubic(p);
+          shard.position.x = startX + (tx - startX) * e;
+          shard.position.y = startY + (ty - startY) * e;
+          shard.alpha = 1 - e * 0.85;
+          shard.scale.set(1 - e * 0.5);
+        }, myId);
+        // Brief mana tank glow on absorption
+        if (manaTank) {
+          manaTank.tint = 0xffff88;
+          await wait(80);
+          manaTank.tint = 0xffffff;
+        }
+        shard.destroy();
+      }
+
       // ---- Beat dispatch: events that share one `t`, in EMITTED ORDER ----
       // Distinct units animate concurrently; events touching the SAME unit are
       // chained so emitted order holds and their tweens never race (e.g. a
@@ -1239,6 +1286,11 @@ function BattleStage({
                   su.dead ? Promise.resolve() : doDeath(su, myId),
                 ),
               );
+            // Spawn crystal shard when enemy dies (flies to mana gauge)
+            if (su && su.team === "enemy" && crystalShardTex) {
+              const pos = su.node.getGlobalPosition();
+              tasks.push(spawnCrystalShard(pos.x, pos.y, myId));
+            }
           }
           // "end" is handled by the replay loop (triggers the result screen).
         }
