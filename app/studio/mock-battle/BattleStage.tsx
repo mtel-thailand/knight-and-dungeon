@@ -1200,6 +1200,15 @@ function BattleStage({
           manaTank.tint = 0xffffff;
           // Advance mana gauge: 10 crystals fill from empty (frame 0) to full (frame 96)
           manaTank.currentFrame = Math.min(96, (manaTank.currentFrame ?? 0) + 10);
+          // Full-gauge pulse effect
+          if (manaTank.currentFrame >= 96) {
+            manaTank.tint = 0xffdd44;
+            await wait(120);
+            manaTank.tint = 0xffffff;
+            manaTank.scale.set(0.55);
+            await wait(100);
+            manaTank.scale.set(0.5);
+          }
         }
         shard.destroy();
       }
@@ -1327,11 +1336,6 @@ function BattleStage({
           su.hpFill.scale.x = hpRatio;
           su.hpFill.tint = hpColor(hpRatio);
           setIdle(su);
-        }
-        // Reset mana tank animation on replay
-        if (manaTank) {
-          manaTank.currentFrame = 0;
-          manaTank.stop();
         }
       }
 
