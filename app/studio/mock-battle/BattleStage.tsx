@@ -256,7 +256,8 @@ function BattleStage({
     app: any;
     wrapper: HTMLDivElement;
     manaTank: any;
-    manaLevel: number; // current gauge frame, persists across re-fights
+    manaLevel: number; // current gauge frame
+    manaCount: number; // how many crystals collected (0-10)
     crystalShardTex: any;
     pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any; Sprite: any };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -347,7 +348,7 @@ function BattleStage({
       if (destroyed) { pixiApp.destroy(); return; }
 
       // Store in ref for Effect 2
-      pixiCtx.current = { app: pixiApp, wrapper, manaTank, manaLevel: 0, crystalShardTex, pixi };
+      pixiCtx.current = { app: pixiApp, wrapper, manaTank, manaLevel: 0, manaCount: 0, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -1200,9 +1201,11 @@ function BattleStage({
         // Sound + advance mana gauge on absorption
         playSound("audio/crystal-absorb.wav", 2);
         if (manaTank) {
-          // 10 crystals fill from empty (frame 0) to full (frame 96)
-          manaTank.currentFrame = Math.min(96, (manaTank.currentFrame ?? 0) + 10);
-          // Persist level in ref so it survives re-fights
+          // Snap to specific frames per crystal collected (10 crystals = full)
+          const MANA_FRAMES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 96];
+          ctx!.manaCount = Math.min(10, (ctx!.manaCount ?? 0) + 1);
+          const idx = Math.min(ctx!.manaCount - 1, MANA_FRAMES.length - 1);
+          manaTank.currentFrame = Math.min(96, MANA_FRAMES[idx]);
           ctx!.manaLevel = manaTank.currentFrame;
         }
         shard.destroy();
