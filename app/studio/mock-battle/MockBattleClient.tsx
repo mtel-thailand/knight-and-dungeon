@@ -166,6 +166,12 @@ export default function MockBattleClient() {
   const [showGrid, setShowGrid] = useState(true);
 
   const controlsRef = useRef<{ replay: () => void } | null>(null);
+  // Keep last non-null result/config so BattleStage never unmounts
+  // (mana gauge and Pixi apps persist across re-fights).
+  const lastResult = useRef(result);
+  if (result) lastResult.current = result;
+  const lastConfig = useRef(config);
+  if (config) lastConfig.current = config;
   // Bridge: BattleStage points this at its live HP-bar repaint; the Display
   // panel calls it so "Health bar" slider tweaks re-geometry bars immediately.
   const redrawHealthBarsRef = useRef<() => void>(() => {});
@@ -703,10 +709,11 @@ export default function MockBattleClient() {
               centerVideo="/assets/dungeon-bg.mp4"
               bgm="/assets/audio/battle-bgm.mp3"
               center={
-                config && result ? (
+                lastConfig.current ? (
                   <BattleStage
-                    result={result}
-                    config={config}
+                    key="persist"
+                    result={lastResult.current!}
+                    config={lastConfig.current!}
                     controlsRef={controlsRef}
                     dmgCfgRef={dmgCfgRef}
                     spellTextCfgRef={spellTextCfgRef}

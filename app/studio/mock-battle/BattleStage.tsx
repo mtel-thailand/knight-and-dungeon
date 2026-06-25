@@ -382,7 +382,13 @@ function BattleStage({
       }
 
       // Store in ref for Effect 2
-      pixiCtx.current = { gameplayApp, uiApp, manaTank, manaCountText, manaLevel: 0, manaCount: 0, crystalShardTex, pixi };
+      // Restore persisted mana level from localStorage (survives page reloads)
+      const savedManaCount = (() => { try { return parseInt(localStorage.getItem("manaCount") ?? "0", 10); } catch { return 0; } })();
+      const savedManaLevel = (() => { try { return parseInt(localStorage.getItem("manaLevel") ?? "0", 10); } catch { return 0; } })();
+      // Apply saved visuals immediately
+      if (manaTank && savedManaLevel > 0) manaTank.currentFrame = Math.min(107, savedManaLevel);
+      if (manaCountText && savedManaCount > 0) manaCountText.text = `${savedManaCount}/10`;
+      pixiCtx.current = { gameplayApp, uiApp, manaTank, manaCountText, manaLevel: savedManaLevel, manaCount: savedManaCount, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -1217,6 +1223,9 @@ function BattleStage({
           manaTank.currentFrame = Math.min(107, MANA_FRAMES[idx]);
           ctx!.manaLevel = manaTank.currentFrame;
           if (manaCountText) manaCountText.text = `${ctx!.manaCount}/10`;
+          // Persist to localStorage (survives page reloads, navigation, etc.)
+          try { localStorage.setItem("manaCount", String(ctx!.manaCount)); } catch {}
+          try { localStorage.setItem("manaLevel", String(ctx!.manaLevel)); } catch {}
         }
 
         const shard = new Sprite(crystalShardTex);
