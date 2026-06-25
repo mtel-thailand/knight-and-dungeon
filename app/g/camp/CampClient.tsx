@@ -262,27 +262,7 @@ export default function CampClient() {
 
         // Build initial player party from selected characters
         setPlayerParty(buildParty(selectedCharIds, cfg));
-
-        // Fetch user's owned characters
-        if (userId) {
-          try {
-            const ucRes = await fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`);
-            const ucData = await ucRes.json();
-            if (ucData.ok && Array.isArray(ucData.characters)) {
-              const owned: Record<string, { level: number; exp: number }> = {};
-              const ownedIds: string[] = [];
-              for (const c of ucData.characters) {
-                owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0 };
-                ownedIds.push(c.characterId);
-              }
-              setUserCharacters(owned);
-              if (ownedIds.length > 0) {
-                setSelectedCharIds(ownedIds.slice(0, BOARD.maxPerSide));
-                setPlayerParty(buildParty(ownedIds.slice(0, BOARD.maxPerSide), cfg));
-              }
-            }
-          } catch { /* server unavailable */ }
-        }
+        setLoading(false);
       } catch {
         // Offline — empty config
         if (!cancelled) {
@@ -295,6 +275,33 @@ export default function CampClient() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // ── Fetch user's owned characters (runs when userId + config are ready) ──
+  useEffect(() => {
+    if (!userId || !config) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const ucRes = await fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`);
+        const ucData = await ucRes.json();
+        if (cancelled) return;
+        if (ucData.ok && Array.isArray(ucData.characters)) {
+          const owned: Record<string, { level: number; exp: number }> = {};
+          const ownedIds: string[] = [];
+          for (const c of ucData.characters) {
+            owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0 };
+            ownedIds.push(c.characterId);
+          }
+          setUserCharacters(owned);
+          if (ownedIds.length > 0) {
+            setSelectedCharIds(ownedIds.slice(0, BOARD.maxPerSide));
+            setPlayerParty(buildParty(ownedIds.slice(0, BOARD.maxPerSide), config));
+          }
+        }
+      } catch { /* server unavailable */ }
+    })();
+    return () => { cancelled = true; };
+  }, [userId, config]);
 
   // ── Refs from the shared replay kit (inert OUT mutators for camp) ──────
 
@@ -651,12 +658,9 @@ export default function CampClient() {
                   </span>
                 </div>
 
-                {/* Character selection grid — owned characters, or all with stats if no user */}
+                {/* Character selection grid — user-owned characters only */}
                 <div className="camp-char-grid">
-                  {(config?.characters ?? []).filter((ch) => {
-                    if (Object.keys(userCharacters).length > 0) return ch.id in userCharacters;
-                    return !!config?.battleStats?.[ch.id];
-                  }).map((ch) => {
+                  {(config?.characters ?? []).filter((ch) => ch.id in userCharacters).map((ch) => {
                     const on = selectedCharIds.includes(ch.id);
                     const hasStats = !!config?.battleStats?.[ch.id];
                     const uc = userCharacters[ch.id];
