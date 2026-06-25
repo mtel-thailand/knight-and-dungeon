@@ -16,7 +16,9 @@ export const CAMPAIGNS_PAGE_CSS = `
     margin: 0 auto; box-sizing: border-box; padding: 40px 28px 80px;
   }
   .campaigns-page .campaigns-head { margin-bottom: 26px; }
+  .campaigns-page .campaigns-head.compact { margin: 34px 0 14px; }
   .campaigns-page .campaigns-title { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0; }
+  .campaigns-page .campaigns-title.small { font-size: 20px; }
   .campaigns-page .campaigns-sub { margin: 6px 0 0; font-size: 13px; color: rgba(255,255,255,0.4); }
   .campaigns-page .campaign-create { display: flex; gap: 10px; margin-bottom: 26px; }
   .campaigns-page .campaign-input {
@@ -89,4 +91,8 @@ export const CAMPAIGNS_PAGE_CSS = `
     padding: 10px; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
     background: rgba(255,255,255,0.02);
   }
+  .campaigns-page .campaign-rewards-section { margin-top: 34px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .campaigns-page .reward-editor-list { display: flex; flex-direction: column; gap: 10px; }
+  .campaigns-page .reward-editor-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: rgba(255,255,255,0.03); }
+  .campaigns-page .reward-editor-row { display: grid; grid-template-columns: 1fr 110px auto; gap: 8px; }
 `; 

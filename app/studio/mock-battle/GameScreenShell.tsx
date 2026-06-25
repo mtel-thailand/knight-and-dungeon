@@ -122,11 +122,11 @@ export const GSS_CSS = `
      container-query units size the frame to the shell's own box, so it fits
      whether the host is the full viewport (/play) or a smaller embed (e.g.
      under the studio menu bar) — ratio preserved, no overflow. */
-  width: min(100vw, 100vh * 9 / 19.5);
+  width: 100%;
   height: min(100vh, 100vw * 19.5 / 9);
-  width: min(100vw, 100svh * 9 / 19.5);
+  width: 100%;
   height: min(100svh, 100vw * 19.5 / 9);
-  width: min(100cqw, 100cqh * 9 / 19.5);
+  width: 100%;
   height: min(100cqh, 100cqw * 19.5 / 9);
   display: flex; flex-direction: column;
   overflow: hidden;

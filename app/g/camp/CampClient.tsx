@@ -7,10 +7,11 @@ import type {
   ResolveRequest,
   ResolveResult,
   SpellDef,
+  BattleRewardDef,
   SpellInput,
   UnitStats,
 } from "@/lib/battle/types";
-import { BOARD } from "@/lib/battle/types";
+import { BATTLE_REWARD_EFFECTS, BOARD } from "@/lib/battle/types";
 import { normalizeConfig, requestResolve, finalHpFromResult, useReplayRefs } from "@/app/studio/mock-battle/replayKit";
 import BattleStage, { deployHex, type BootstrapConfig } from "@/app/studio/mock-battle/BattleStage";
 import GameScreenShell from "@/app/studio/mock-battle/GameScreenShell";
@@ -20,7 +21,7 @@ import { CAMP_PAGE_CSS } from "./campStyles";
 // State machine: idle → fighting → won / lost
 // ────────────────────────────────────────────────────────────────────────────
 
-type Phase = "idle" | "fighting" | "won" | "lost";
+type Phase = "idle" | "fighting" | "reward" | "won" | "lost";
 
 /**
  * TEMP ("for now"): the camp player party is a single fixed `blue`, regardless of
@@ -68,6 +69,11 @@ export default function CampClient() {
   const [result, setResult] = useState<ResolveResult | null>(null);
   const [waveKey, setWaveKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  const [rewardChoices, setRewardChoices] = useState<BattleRewardDef[]>([]);
+  const [pendingRewardParty, setPendingRewardParty] = useState<PartyMemberInput[]>([]);
+  const [pendingRewardWave, setPendingRewardWave] = useState(1);
 
   // Stable refs so async wave logic always reads the latest values.
   const activeCampaignRef = useRef(activeCampaign);
@@ -78,6 +84,78 @@ export default function CampClient() {
   playerPartyRef.current = playerParty;
   const waveIndexRef = useRef(waveIndex);
   waveIndexRef.current = waveIndex;
+
+  function togglePaused() {
+    setPaused((prev) => {
+      const next = !prev;
+      pausedRef.current = next;
+      return next;
+    });
+  }
+
+  function rewardSummary(reward: BattleRewardDef): string {
+    if (reward.effect === "atkPercent") return `ATK +${reward.effectValue}%`;
+    if (reward.effect === "restoreHp") return `Restore ${reward.effectValue} HP`;
+    return `DEF +${reward.effectValue}`;
+  }
+
+  function pickRewardChoices(rewards: BattleRewardDef[]): BattleRewardDef[] {
+    const byEffect = new Map<string, BattleRewardDef[]>();
+    for (const reward of rewards) {
+      const group = byEffect.get(reward.effect) ?? [];
+      group.push(reward);
+      byEffect.set(reward.effect, group);
+    }
+    const choices: BattleRewardDef[] = [];
+    for (const effect of BATTLE_REWARD_EFFECTS) {
+      const group = byEffect.get(effect) ?? [];
+      if (group.length === 0) continue;
+      choices.push(group[Math.floor(Math.random() * group.length)]);
+      if (choices.length === 3) break;
+    }
+    return choices;
+  }
+
+  function applyRewardToParty(reward: BattleRewardDef, party: PartyMemberInput[]): PartyMemberInput[] {
+    return party.map((m) => {
+      if (reward.effect === "atkPercent") {
+        return {
+          ...m,
+          stats: {
+            ...m.stats,
+            attack: Math.max(0, Math.round(m.stats.attack * (1 + reward.effectValue / 100))),
+          },
+        };
+      }
+      if (reward.effect === "restoreHp") {
+        const current = m.currentHp ?? m.stats.hp;
+        return { ...m, currentHp: Math.min(m.stats.hp, current + reward.effectValue) };
+      }
+      return {
+        ...m,
+        stats: { ...m.stats, defense: Math.max(0, m.stats.defense + reward.effectValue) },
+      };
+    });
+  }
+
+  function chooseReward(reward: BattleRewardDef) {
+    const nextParty = applyRewardToParty(reward, pendingRewardParty);
+    const nextWave = pendingRewardWave;
+    setPlayerParty(nextParty);
+    setRewardChoices([]);
+    setPendingRewardParty([]);
+    setResult(null);
+    setWaveIndex(nextWave);
+    pausedRef.current = false;
+    setPaused(false);
+    setPhase("fighting");
+    runWave(nextWave, nextParty).then((res) => {
+      if (res !== "ok") {
+        setError(typeof res === "string" ? res : "Wave resolution failed");
+        setPhase("lost");
+      }
+    });
+  }
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
 
@@ -193,14 +271,23 @@ export default function CampClient() {
       setPlayerParty(nextParty);
 
       if (curWave < camp.waveCount) {
-        setWaveIndex(curWave + 1);
-        // Trigger next wave asynchronously; use the party we just computed.
-        runWave(curWave + 1, nextParty).then((res) => {
-          if (res !== "ok") {
-            setError(typeof res === "string" ? res : "Wave resolution failed");
-            setPhase("lost");
-          }
-        });
+        const choices = pickRewardChoices(configRef.current?.battleRewards ?? []);
+        if (choices.length > 0) {
+          setPendingRewardParty(nextParty);
+          setPendingRewardWave(curWave + 1);
+          setRewardChoices(choices);
+          pausedRef.current = true;
+          setPaused(true);
+        } else {
+          setWaveIndex(curWave + 1);
+          // Trigger next wave asynchronously; use the party we just computed.
+          runWave(curWave + 1, nextParty).then((res) => {
+            if (res !== "ok") {
+              setError(typeof res === "string" ? res : "Wave resolution failed");
+              setPhase("lost");
+            }
+          });
+        }
       } else {
         setPhase("won");
       }
@@ -230,6 +317,10 @@ export default function CampClient() {
       return;
     }
     setError(null);
+    pausedRef.current = false;
+    setPaused(false);
+    setRewardChoices([]);
+    setPendingRewardParty([]);
     setPhase("fighting");
     setWaveIndex(1);
     runWave(1, party).then((res) => {
@@ -246,6 +337,10 @@ export default function CampClient() {
     setWaveKey(0);
     setWaveIndex(1);
     setError(null);
+    pausedRef.current = false;
+    setPaused(false);
+    setRewardChoices([]);
+    setPendingRewardParty([]);
     // Re-fetch config to get fresh campaign/roster state
     setLoading(true);
     fetch("/api/config")
@@ -295,6 +390,15 @@ export default function CampClient() {
                 <span className="camp-hud-value">{waveIndex}</span>
                 <span className="camp-hud-divider">/</span>
                 <span className="camp-hud-total">{activeCampaign?.waveCount ?? "?"}</span>
+                <button
+                  className={paused ? "camp-pause-btn active" : "camp-pause-btn"}
+                  type="button"
+                  onClick={togglePaused}
+                  aria-pressed={paused}
+                  aria-label={paused ? "Resume battle" : "Pause battle"}
+                >
+                  {paused ? "Resume" : "Pause"}
+                </button>
               </div>
             </div>
 
@@ -308,11 +412,35 @@ export default function CampClient() {
                   result={result}
                   config={config}
                   {...refs}
+                  pausedRef={pausedRef}
                   onReady={() => {}}
                   onEnd={onWaveEnd}
                 />
               }
             />
+            {rewardChoices.length > 0 ? (
+              <div className="camp-reward-scrim">
+                <div className="camp-reward-panel">
+                  <h2 className="camp-reward-title">Choose one</h2>
+                  <div className="camp-reward-cards">
+                    {rewardChoices.map((reward) => (
+                      <button
+                        key={reward.id}
+                        className="camp-reward-card"
+                        type="button"
+                        onClick={() => chooseReward(reward)}
+                      >
+                        <span className="camp-reward-card-name">{reward.name}</span>
+                        <span className="camp-reward-card-effect">{rewardSummary(reward)}</span>
+                        <span className="camp-reward-card-desc">
+                          {reward.description || rewardSummary(reward)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : phase === "fighting" ? (
           <div className="camp-center-msg">

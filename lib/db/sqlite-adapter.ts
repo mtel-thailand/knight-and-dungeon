@@ -16,6 +16,7 @@ import type {
   SpellTextConfig,
   SpellDef,
   CampaignDef,
+  BattleRewardDef,
 } from "@/lib/battle/types";
 
 // Dynamic import inside the functions so better-sqlite3 is never loaded when
@@ -72,4 +73,8 @@ export async function listCampaigns(): Promise<CampaignDef[]> {
 
 export async function getRoster(): Promise<unknown> {
   return (await db()).getRoster();
+}
+
+export async function listBattleRewards(): Promise<BattleRewardDef[]> {
+  return (await db()).listBattleRewards();
 }

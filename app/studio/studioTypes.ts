@@ -6,7 +6,7 @@
 // the client effect).
 
 import type { Texture, SpritesheetData } from "pixi.js";
-import type { UnitStats, CharacterRoleMap, MapConfig, SpellDef, CampaignDef } from "@/lib/battle/types";
+import type { UnitStats, CharacterRoleMap, MapConfig, SpellDef, CampaignDef, BattleRewardDef } from "@/lib/battle/types";
 
 /** Per-animation playback config (the DB stores {duration,loop}; the client widens it with alpha/rotation). */
 export type AnimConfig = {
@@ -96,6 +96,7 @@ export type BootstrapPayload = {
   battleStats?: Record<string, UnitStats>;
   roleMaps?: Record<string, CharacterRoleMap>;
   spells?: SpellDef[];
+  battleRewards?: BattleRewardDef[];
   characterSpells?: Record<string, string[]>;
   mapConfig?: MapConfig;
   campaigns?: CampaignDef[];

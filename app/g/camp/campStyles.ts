@@ -169,6 +169,76 @@ export const CAMP_PAGE_CSS = `
   color: rgba(255,255,255,0.45);
 }
 
+.camp-pause-btn {
+  pointer-events: auto;
+  margin-left: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.68);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.camp-pause-btn.active {
+  color: #04140f;
+  background: linear-gradient(180deg, #46eccf, #2bbfa6);
+  border-color: rgba(70,236,207,0.4);
+}
+
+/* ── Mid-campaign reward choice ────────────────────────────────────── */
+
+.camp-reward-scrim {
+  position: absolute; inset: 0; z-index: 55;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.camp-reward-panel { text-align: center; width: min(760px, 100%); }
+.camp-reward-title {
+  font-family: 'Cinzel', serif; font-size: 30px; margin: 0 0 22px;
+  color: #edf0f5; letter-spacing: 0.02em;
+}
+.camp-reward-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, min(156px, 28vw)));
+  justify-content: center;
+  gap: clamp(8px, 2vw, 16px);
+}
+.camp-reward-card {
+  width: 100%; aspect-ratio: 2 / 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 18px 14px; text-align: center;
+  border-radius: 16px; cursor: pointer;
+  color: #edf0f5;
+  background:
+    radial-gradient(130% 80% at 50% 0%, rgba(70,236,207,0.14), transparent 58%),
+    linear-gradient(180deg, rgba(24,28,42,0.98), rgba(12,14,22,0.98));
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.48), inset 0 0 0 1px rgba(255,255,255,0.03);
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.camp-reward-card:hover {
+  transform: translateY(-5px);
+  border-color: rgba(70,236,207,0.45);
+  box-shadow: 0 30px 76px rgba(0,0,0,0.58), 0 0 34px rgba(70,236,207,0.12);
+}
+.camp-reward-card-name { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700; }
+.camp-reward-card-effect { font-size: 15px; font-weight: 800; color: #46eccf; }
+.camp-reward-card-desc { font-size: 12px; line-height: 1.45; color: rgba(255,255,255,0.5); }
+@media (max-width: 520px) {
+  .camp-reward-scrim { padding: 14px; }
+  .camp-reward-title { font-size: 24px; margin-bottom: 14px; }
+  .camp-reward-card { padding: 12px 8px; gap: 8px; border-radius: 12px; }
+  .camp-reward-card-name { font-size: 14px; }
+  .camp-reward-card-effect { font-size: 12px; }
+  .camp-reward-card-desc { font-size: 10px; line-height: 1.3; }
+}
+
 .camp-hud-label {
   font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
   color: rgba(255,255,255,0.25);

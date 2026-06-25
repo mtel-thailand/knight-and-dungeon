@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import Database from "better-sqlite3";
-import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_TEXT_CONFIG } from "@/lib/battle/types";
+import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_TEXT_CONFIG, DEFAULT_BATTLE_REWARDS } from "@/lib/battle/types";
 import type {
   UnitStats,
   CharacterRoleMap,
@@ -14,6 +14,8 @@ import type {
   SpellTransition,
   SpellType,
   CampaignDef,
+  BattleRewardDef,
+  BattleRewardEffect,
 } from "@/lib/battle/types";
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -134,6 +136,14 @@ function createDb(): Database.Database {
       id   INTEGER PRIMARY KEY CHECK (id = 1),
       data TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS battle_rewards (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL,
+      description   TEXT NOT NULL DEFAULT '',
+      effect        TEXT NOT NULL DEFAULT 'atkPercent',
+      effect_value  REAL NOT NULL DEFAULT 10,
+      sort_order    INTEGER NOT NULL DEFAULT 0
+    );
   `);
   // Migration: battle_map_config predates rotation_x / rotation_y. CREATE TABLE
   // IF NOT EXISTS won't add columns to an already-existing table, so add them
@@ -215,6 +225,25 @@ function createDb(): Database.Database {
   }
   if (!spellCols.has("transition_out")) {
     db.exec("ALTER TABLE spells ADD COLUMN transition_out TEXT");
+  }
+  const rewardCount = (
+    db.prepare("SELECT COUNT(*) AS n FROM battle_rewards").get() as { n: number }
+  ).n;
+  if (rewardCount === 0) {
+    const insertReward = db.prepare(
+      `INSERT INTO battle_rewards (id, name, description, effect, effect_value, sort_order)
+         VALUES (@id, @name, @description, @effect, @effect_value, @sort_order)`,
+    );
+    DEFAULT_BATTLE_REWARDS.forEach((reward, i) => {
+      insertReward.run({
+        id: reward.id,
+        name: reward.name,
+        description: reward.description,
+        effect: reward.effect,
+        effect_value: reward.effectValue,
+        sort_order: i,
+      });
+    });
   }
   return db;
 }
@@ -991,4 +1020,86 @@ export function setRoster(data: unknown): void {
          ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
     )
     .run({ data: JSON.stringify(data) });
+}
+
+// ---------------------------------------------------------------------------
+// Battle rewards — campaign wave-reward cards. Surfaced read-only via
+// GET /api/config (battleRewards) and authored through POST/DELETE
+// /api/config/reward. Mirrors the spells CRUD style.
+// ---------------------------------------------------------------------------
+
+/** The global battle-reward catalog, ordered by sort_order then id. */
+export function listBattleRewards(): BattleRewardDef[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, name, description, effect, effect_value
+         FROM battle_rewards ORDER BY sort_order, id`,
+    )
+    .all() as Array<{
+    id: string;
+    name: string;
+    description: string;
+    effect: string;
+    effect_value: number;
+  }>;
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    effect: (["atkPercent", "restoreHp", "defFlat"].includes(r.effect)
+      ? r.effect
+      : "atkPercent") as BattleRewardEffect,
+    effectValue: r.effect_value,
+  }));
+}
+
+/** Idempotent upsert of one battle-reward entry. */
+export function upsertBattleReward(r: {
+  id: string;
+  name: string;
+  description?: string;
+  effect?: BattleRewardEffect;
+  effectValue?: number;
+  sortOrder?: number;
+}): void {
+  const db = getDb();
+  const sortOrder =
+    r.sortOrder ??
+    (
+      db
+        .prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM battle_rewards")
+        .get() as { n: number }
+    ).n;
+  db.prepare(
+    `INSERT INTO battle_rewards (id, name, description, effect, effect_value, sort_order)
+       VALUES (@id, @name, @description, @effect, @effect_value, @sort_order)
+     ON CONFLICT(id) DO UPDATE SET
+       name          = excluded.name,
+       description   = excluded.description,
+       effect        = excluded.effect,
+       effect_value  = excluded.effect_value`,
+  ).run({
+    id: r.id,
+    name: r.name,
+    description: r.description ?? "",
+    effect: r.effect ?? "atkPercent",
+    effect_value: r.effectValue ?? 10,
+    sort_order: sortOrder,
+  });
+}
+
+/** Deletes a battle reward by id. */
+export function deleteBattleReward(id: string): void {
+  getDb().prepare("DELETE FROM battle_rewards WHERE id = ?").run(id);
+}
+
+/** Prunes battle rewards to an allowed id set (used by the idempotent seed script). */
+export function pruneBattleRewards(keepIds: string[]): void {
+  const db = getDb();
+  if (keepIds.length === 0) {
+    db.prepare("DELETE FROM battle_rewards").run();
+    return;
+  }
+  const placeholders = keepIds.map(() => "?").join(",");
+  db.prepare(`DELETE FROM battle_rewards WHERE id NOT IN (${placeholders})`).run(...keepIds);
 }

@@ -23,6 +23,7 @@ import type {
   SpellTextConfig,
   SpellDef,
   CampaignDef,
+  BattleRewardDef,
 } from "@/lib/battle/types";
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ type DbReadAdapter = {
   getCharacterSpells(): Promise<Record<string, string[]>>;
   listCampaigns(): Promise<CampaignDef[]>;
   getRoster(): Promise<unknown>;
+  listBattleRewards(): Promise<BattleRewardDef[]>;
 };
 
 let _impl: DbReadAdapter | null = null;
@@ -107,4 +109,8 @@ export async function listCampaigns(): Promise<CampaignDef[]> {
 
 export async function getRoster(): Promise<unknown> {
   return (await impl()).getRoster();
+}
+
+export async function listBattleRewards(): Promise<BattleRewardDef[]> {
+  return (await impl()).listBattleRewards();
 }

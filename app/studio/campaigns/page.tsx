@@ -9,15 +9,18 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { CampaignDef } from "@/lib/battle/types";
+import type { BattleRewardDef, BattleRewardEffect, CampaignDef } from "@/lib/battle/types";
+import { BATTLE_REWARD_EFFECTS, DEFAULT_BATTLE_REWARDS } from "@/lib/battle/types";
 import { slugify } from "../studioHelpers";
 import type { BootstrapPayload } from "../studioTypes";
 import { CAMPAIGNS_PAGE_CSS } from "./campaignsStyles";
 
 export default function CampaignsListPage() {
   const [campaigns, setCampaigns] = useState<CampaignDef[]>([]);
+  const [battleRewards, setBattleRewards] = useState<BattleRewardDef[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
+  const [newRewardName, setNewRewardName] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -26,6 +29,7 @@ export default function CampaignsListPage() {
       if (res.ok) {
         const data: BootstrapPayload = await res.json();
         setCampaigns(Array.isArray(data.campaigns) ? data.campaigns : []);
+        setBattleRewards(Array.isArray(data.battleRewards) ? data.battleRewards : []);
       }
     } catch {
       /* keep whatever we had */
@@ -92,6 +96,61 @@ export default function CampaignsListPage() {
       await fetch(`/api/config/campaign?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
+    } catch {
+      /* reconciled by load() below */
+    } finally {
+      load();
+    }
+  }
+
+  function uniqueRewardId(base: string): string {
+    if (!battleRewards.some((r) => r.id === base)) return base;
+    let n = 2;
+    while (battleRewards.some((r) => r.id === `${base}-${n}`)) n++;
+    return `${base}-${n}`;
+  }
+
+  async function saveReward(reward: BattleRewardDef) {
+    setBattleRewards((prev) => {
+      const i = prev.findIndex((r) => r.id === reward.id);
+      if (i === -1) return [...prev, reward];
+      const next = [...prev];
+      next[i] = reward;
+      return next;
+    });
+    try {
+      await fetch("/api/config/reward", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reward }),
+      });
+    } catch {
+      /* reconciled by load() below */
+    } finally {
+      load();
+    }
+  }
+
+  async function createReward() {
+    const name = newRewardName.trim();
+    if (!name || busy) return;
+    const base = DEFAULT_BATTLE_REWARDS[0];
+    const reward: BattleRewardDef = {
+      ...base,
+      id: uniqueRewardId(slugify(name, "reward")),
+      name,
+      description: base.description,
+    };
+    setBusy(true);
+    setNewRewardName("");
+    await saveReward(reward);
+    setBusy(false);
+  }
+
+  async function removeReward(id: string) {
+    setBattleRewards((prev) => prev.filter((r) => r.id !== id));
+    try {
+      await fetch(`/api/config/reward?id=${encodeURIComponent(id)}`, { method: "DELETE" });
     } catch {
       /* reconciled by load() below */
     } finally {
@@ -217,6 +276,80 @@ export default function CampaignsListPage() {
             ))}
           </ul>
         )}
+
+        <section className="campaign-rewards-section">
+          <header className="campaigns-head compact">
+            <h2 className="campaigns-title small">Battle Rewards</h2>
+            <p className="campaigns-sub">
+              Cards shown after won campaign waves. Players choose one of three.
+            </p>
+          </header>
+
+          <form
+            className="campaign-create"
+            onSubmit={(e) => {
+              e.preventDefault();
+              createReward();
+            }}
+          >
+            <input
+              className="campaign-input"
+              placeholder="New reward name"
+              value={newRewardName}
+              onChange={(e) => setNewRewardName(e.target.value)}
+              aria-label="New reward name"
+            />
+            <button className="campaign-btn primary" type="submit" disabled={!newRewardName.trim() || busy}>
+              New reward
+            </button>
+          </form>
+
+          <div className="reward-editor-list">
+            {battleRewards.map((r) => (
+              <div className="reward-editor-card" key={r.id}>
+                <input
+                  className="campaign-input"
+                  value={r.name}
+                  onChange={(e) => saveReward({ ...r, name: e.target.value })}
+                  aria-label={`${r.id} reward name`}
+                />
+                <input
+                  className="campaign-input"
+                  value={r.description}
+                  onChange={(e) => saveReward({ ...r, description: e.target.value })}
+                  aria-label={`${r.id} reward description`}
+                />
+                <div className="reward-editor-row">
+                  <select
+                    className="campaign-input"
+                    value={r.effect}
+                    onChange={(e) => saveReward({ ...r, effect: e.target.value as BattleRewardEffect })}
+                    aria-label={`${r.id} reward effect`}
+                  >
+                    {BATTLE_REWARD_EFFECTS.map((effect) => (
+                      <option key={effect} value={effect}>{effect}</option>
+                    ))}
+                  </select>
+                  <input
+                    className="campaign-input"
+                    type="number"
+                    min={1}
+                    max={10000}
+                    value={r.effectValue}
+                    onChange={(e) => saveReward({ ...r, effectValue: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
+                    aria-label={`${r.id} reward value`}
+                  />
+                  <button className="campaign-btn danger" type="button" onClick={() => removeReward(r.id)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+            {!loading && battleRewards.length === 0 ? (
+              <div className="campaigns-empty">No battle rewards yet.</div>
+            ) : null}
+          </div>
+        </section>
       </div>
     </div>
   );

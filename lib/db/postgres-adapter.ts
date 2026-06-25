@@ -24,6 +24,8 @@ import type {
   SpellType,
   SpellTransition,
   CampaignDef,
+  BattleRewardDef,
+  BattleRewardEffect,
 } from "@/lib/battle/types";
 import type { AnimationRow, CharacterSeed } from "@/app/api/config/db";
 import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_TEXT_CONFIG } from "@/lib/battle/types";
@@ -344,4 +346,28 @@ export async function getRoster(): Promise<unknown> {
   );
   if (result.rows.length === 0) return null;
   return JSON.parse(result.rows[0].data);
+}
+
+/** The global battle-reward catalog, ordered by sort_order then id. */
+export async function listBattleRewards(): Promise<BattleRewardDef[]> {
+  const pool = getPool();
+  const result = await pool.query<{
+    id: string;
+    name: string;
+    description: string;
+    effect: string;
+    effect_value: number;
+  }>(
+    `SELECT id, name, description, effect, effect_value
+     FROM battle_rewards ORDER BY sort_order, id`,
+  );
+  return result.rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    effect: (["atkPercent", "restoreHp", "defFlat"].includes(r.effect)
+      ? r.effect
+      : "atkPercent") as BattleRewardEffect,
+    effectValue: r.effect_value,
+  }));
 }

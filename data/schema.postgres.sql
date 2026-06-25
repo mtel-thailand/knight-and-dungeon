@@ -102,3 +102,12 @@ CREATE TABLE IF NOT EXISTS mock_battle_roster (
     id   INTEGER PRIMARY KEY CHECK (id = 1),
     data TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS battle_rewards (
+    id           TEXT PRIMARY KEY,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    effect       TEXT NOT NULL DEFAULT 'atkPercent',
+    effect_value DOUBLE PRECISION NOT NULL DEFAULT 10,
+    sort_order   INTEGER NOT NULL DEFAULT 0
+);

@@ -9,6 +9,7 @@ import type {
   HexPosition,
   MapConfig,
   ResolveResult,
+  BattleRewardDef,
   SpellDef,
   SpellTextConfig as SpellTextCfg,
   Team,
@@ -154,6 +155,7 @@ export type BootstrapConfig = {
   damageConfig?: DamageCfg;
   spellTextConfig?: SpellTextCfg;
   spells?: SpellDef[];
+  battleRewards?: BattleRewardDef[];
   characterSpells?: Record<string, string[]>;
   // Last-saved mock-battle builder parties (opaque to the server). null/absent
   // until the user edits a party; restored on load, persisted (debounced) on edit.
@@ -219,6 +221,9 @@ export type StageProps = {
   // is the effect's live setter the panel calls to toggle the hex floor.
   showGridRef: React.MutableRefObject<boolean>;
   gridVisibleRef: React.MutableRefObject<((v: boolean) => void) | null>;
+  // Optional live pause flag for game-screen HUDs. Kept as a ref so toggling pause
+  // never tears down the Pixi app/replay effect.
+  pausedRef?: React.MutableRefObject<boolean>;
   onReady: () => void;
   onEnd: (r: "win" | "lose" | "draw") => void;
 };
@@ -234,10 +239,13 @@ function BattleStage({
   applyMapRef,
   showGridRef,
   gridVisibleRef,
+  pausedRef,
   onReady,
   onEnd,
 }: StageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const localPausedRef = useRef(false);
+  const activePausedRef = pausedRef ?? localPausedRef;
 
   useEffect(() => {
     const container = containerRef.current!;
@@ -278,6 +286,19 @@ function BattleStage({
         return;
       }
       wrapper.appendChild(pixiApp.canvas);
+
+      // Pause/resume Pixi's ticker so AnimatedSprite frame playback freezes while
+      // the replay's own waits/tweens are paused below.
+      let pauseRaf = 0;
+      const syncTickerPause = () => {
+        if (pixiApp?.ticker) pixiApp.ticker.speed = activePausedRef.current ? 0 : 1;
+        if (!destroyed) pauseRaf = requestAnimationFrame(syncTickerPause);
+      };
+      syncTickerPause();
+      cleanups.push(() => {
+        cancelAnimationFrame(pauseRaf);
+        if (pixiApp?.ticker) pixiApp.ticker.speed = 1;
+      });
 
       // Load the pixel display font before any Pixi text is rasterized — canvas
       // text doesn't trigger the CSS @font-face fetch, so without this the first
@@ -648,8 +669,21 @@ function BattleStage({
       // ---- Playback primitives (all genId/destroyed-aware) ----
       function wait(ms: number): Promise<void> {
         return new Promise((res) => {
-          const id = setTimeout(res, ms);
-          cleanups.push(() => clearTimeout(id));
+          let raf = 0;
+          let elapsed = 0;
+          let last = performance.now();
+          const step = (now: number) => {
+            if (destroyed) {
+              res();
+              return;
+            }
+            if (!activePausedRef.current) elapsed += now - last;
+            last = now;
+            if (elapsed >= ms) res();
+            else raf = requestAnimationFrame(step);
+          };
+          raf = requestAnimationFrame(step);
+          cleanups.push(() => cancelAnimationFrame(raf));
         });
       }
       // =============================================================================
@@ -663,14 +697,17 @@ function BattleStage({
         myId: number,
       ): Promise<void> {
         return new Promise((res) => {
-          const start = performance.now();
+          let elapsed = 0;
+          let last = performance.now();
           let raf = 0;
           const step = (now: number) => {
             if (destroyed || genId !== myId) {
               res();
               return;
             }
-            const p = Math.min(1, (now - start) / ms);
+            if (!activePausedRef.current) elapsed += now - last;
+            last = now;
+            const p = Math.min(1, elapsed / ms);
             fn(p);
             if (p < 1) raf = requestAnimationFrame(step);
             else res();
@@ -719,8 +756,7 @@ function BattleStage({
           su.body.onComplete = finish;
           playSound(soundForRole(su.characterId, role));
           su.body.play();
-          const safety = setTimeout(finish, durSec * 1000 + 90);
-          cleanups.push(() => clearTimeout(safety));
+          wait(durSec * 1000 + 90).then(finish);
         });
       }
 

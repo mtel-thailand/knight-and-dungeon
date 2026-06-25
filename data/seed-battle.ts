@@ -22,7 +22,10 @@ import {
   pruneBattleData,
   getBattleStats,
   getCharacterRoleMaps,
+  upsertBattleReward,
+  pruneBattleRewards,
 } from "../app/api/config/db";
+import { DEFAULT_BATTLE_REWARDS } from "../lib/battle/types";
 import type { UnitStats, CharacterRoleMap } from "../lib/battle/types";
 
 type CharacterSeed = {
@@ -39,7 +42,7 @@ const ROSTER: Record<string, CharacterSeed> = {
   },
   "little-green": {
     stats: { hp: 20, attack: 5, defense: 0, actionSpeed: 100, range: 1, skills: [], attackType: "melee" },
-    roles: { idle: "idle", move: "idle", attack: "stab", hit: "take-hit", death: "die" },
+    roles: { idle: "idle", move: "idle", attack: "attack", hit: "hit", death: "die" },
     spells: [],
   },
   "big-green": {
@@ -59,6 +62,12 @@ for (const [characterId, seed] of Object.entries(ROSTER)) {
 // Drop battle rows for any character no longer in the roster, so re-running
 // fully syncs the tables to ROSTER.
 pruneBattleData(Object.keys(ROSTER));
+
+DEFAULT_BATTLE_REWARDS.forEach((reward, i) => {
+  upsertBattleReward({ ...reward, sortOrder: i });
+  console.log(`seeded battle reward "${reward.id}"`);
+});
+pruneBattleRewards(DEFAULT_BATTLE_REWARDS.map((reward) => reward.id));
 
 console.log("\n--- battleStats ---");
 console.log(JSON.stringify(getBattleStats(), null, 2));

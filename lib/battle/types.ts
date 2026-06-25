@@ -98,6 +98,44 @@ export const CAMPAIGN_BOUNDS = {
   waveCount: { min: 1, max: 50 },
 } as const;
 
+// ---- Battle rewards (campaign wave-reward system) ----
+
+// The effect type determines how a reward modifies the player party mid-run.
+// "atkPercent"  — multiply stats.attack by (1 + value/100), floor/round
+// "restoreHp"   — add value to currentHp, capped by max hp; if no currentHp, treat as stats.hp
+// "defFlat"     — add value to stats.defense
+export type BattleRewardEffect = "atkPercent" | "restoreHp" | "defFlat";
+export const BATTLE_REWARD_EFFECTS: readonly BattleRewardEffect[] = [
+  "atkPercent",
+  "restoreHp",
+  "defFlat",
+] as const;
+
+/** CMS entity, persisted in `battle_rewards`, surfaced in GET /api/config as `battleRewards`. */
+export type BattleRewardDef = {
+  id: string;
+  name: string;
+  description: string; // short flavour text shown on the reward card
+  effect: BattleRewardEffect;
+  effectValue: number; // meaning depends on effect type (percent points, flat HP, flat DEF)
+};
+
+export const BATTLE_REWARD_BOUNDS = {
+  effectValue: { min: 1, max: 10000 },
+} as const;
+
+export const DEFAULT_BATTLE_REWARDS: BattleRewardDef[] = [
+  { id: "heal-50", name: "Heal I", description: "Restore 50 HP", effect: "restoreHp", effectValue: 50 },
+  { id: "heal-100", name: "Heal II", description: "Restore 100 HP", effect: "restoreHp", effectValue: 100 },
+  { id: "heal-200", name: "Heal III", description: "Restore 200 HP", effect: "restoreHp", effectValue: 200 },
+  { id: "atk-10", name: "Power I", description: "ATK plus 10%", effect: "atkPercent", effectValue: 10 },
+  { id: "atk-20", name: "Power II", description: "ATK plus 20%", effect: "atkPercent", effectValue: 20 },
+  { id: "atk-30", name: "Power III", description: "ATK plus 30%", effect: "atkPercent", effectValue: 30 },
+  { id: "def-5", name: "Fortify I", description: "Def plus 5", effect: "defFlat", effectValue: 5 },
+  { id: "def-10", name: "Fortify II", description: "Def plus 10", effect: "defFlat", effectValue: 10 },
+  { id: "def-15", name: "Fortify III", description: "Def plus 15", effect: "defFlat", effectValue: 15 },
+];
+
 export type UnitStats = {
   hp: number;
   attack: number;

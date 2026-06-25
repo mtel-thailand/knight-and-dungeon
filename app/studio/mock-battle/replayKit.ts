@@ -72,6 +72,7 @@ function normalizeConfig(data: any): BootstrapConfig {
     damageConfig: data?.damageConfig ?? { ...DEFAULT_DAMAGE_CONFIG },
     spellTextConfig: data?.spellTextConfig ?? { ...DEFAULT_SPELL_TEXT_CONFIG },
     spells: Array.isArray(data?.spells) ? data.spells : [],
+    battleRewards: Array.isArray(data?.battleRewards) ? data.battleRewards : [],
     characterSpells: data?.characterSpells ?? {},
     roster: data?.roster ?? null,
   };
