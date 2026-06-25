@@ -21,7 +21,7 @@ import type {
   ResolveRequest,
   ResolveResult,
 } from "./types";
-import { MAX_BATTLE_TIME, BATTLE_TICK, DEFAULT_ATTACK_TYPE } from "./types";
+import { BATTLE_TICK, DEFAULT_ATTACK_TYPE } from "./types";
 import {
   VALID_HEXES,
   hexDistance,
@@ -336,9 +336,8 @@ function teamHp(battle: BattleState, team: Team): number {
 }
 
 // Win = all enemies dead; lose = all players dead; mutual death = LOSE (players are
-// checked first). Timeout at MAX_BATTLE_TIME resolves by higher remaining total HP
-// (win/lose); EQUAL => draw (not auto-lose). Guarded so the terminal status and the
-// `end` event are produced exactly once.
+// checked first). No timeout — battle runs until one side is fully eliminated.
+// Guarded so the terminal status and the `end` event are produced exactly once.
 export function checkBattleEnd(battle: BattleState): void {
   if (battle.status !== "running") return;
 
@@ -348,11 +347,6 @@ export function checkBattleEnd(battle: BattleState): void {
   let result: "win" | "lose" | "draw" | null = null;
   if (!playersAlive) result = "lose"; // lose-first on mutual death
   else if (!enemiesAlive) result = "win";
-  else if (battle.currentTime >= MAX_BATTLE_TIME) {
-    const playerHp = teamHp(battle, "player");
-    const enemyHp = teamHp(battle, "enemy");
-    result = playerHp > enemyHp ? "win" : enemyHp > playerHp ? "lose" : "draw";
-  }
 
   if (result) {
     battle.status = result;
@@ -464,7 +458,7 @@ export function resolveBattle(req: ResolveRequest): ResolveResult {
   battle.status = "running";
 
   while (battle.status === "running") {
-    updateBattle(battle, BATTLE_TICK); // MAX_BATTLE_TIME guarantees termination
+    updateBattle(battle, BATTLE_TICK); // runs until one side is eliminated
   }
 
   // Closing board AFTER the sim (same shape as initialState) — lets the campaign
