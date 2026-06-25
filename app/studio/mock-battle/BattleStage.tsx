@@ -1189,6 +1189,10 @@ function BattleStage({
           shard.alpha = 1 - e * 0.85;
           shard.scale.set(0.25 * (1 - e));
         }, myId);
+        // Phase 3: slow fade out at mana tank
+        await tween(400, (p) => {
+          shard.alpha = 0.2 * (1 - easeOutCubic(p));
+        }, myId);
         // Brief mana tank glow + sound on absorption
         playSound("/assets/audio/crystal-absorb.wav");
         if (manaTank) {
