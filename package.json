@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@img/colour": "^1.1.0",
     "drizzle-orm": "^0.45.2",
     "firebase": "^12.15.0",
     "firebase-admin": "^14.0.0",
@@ -16,7 +17,7 @@
     "pixi.js": "^8.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sharp": "^0.35.2"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/node": "^20",
