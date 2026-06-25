@@ -166,7 +166,7 @@ export default function MockBattleClient() {
   // this OFF — not built here. In-memory only (not persisted).
   const [showGrid, setShowGrid] = useState(true);
 
-  const controlsRef = useRef<{ replay: () => void } | null>(null);
+  const controlsRef = useRef<{ replay: () => void; getManaCount: () => number } | null>(null);
   const { user: authUser } = useAuth();
   const userId = authUser?.uid;
   // (mana gauge and Pixi apps persist across re-fights).

@@ -203,7 +203,7 @@ export type StageProps = {
   result: ResolveResult;
   config: BootstrapConfig;
   userId?: string; // Firebase UID for server-persisted stats (totalExp, etc.)
-  controlsRef: React.MutableRefObject<{ replay: () => void } | null>;
+  controlsRef: React.MutableRefObject<{ replay: () => void; getManaCount: () => number } | null>;
   // Live damage-number config. A stable ref (never in the effect deps) so the
   // panel can retune numbers mid-battle without tearing down the Pixi app.
   dmgCfgRef: React.MutableRefObject<DamageCfg>;
@@ -1408,16 +1408,29 @@ function BattleStage({
           await wait(INTER_BEAT_MS);
         }
         if (destroyed || genId !== myId) return;
-        // Accumulate EXP per character from battle result
+        // ---- EXP accumulation (post-battle) ----
+        // Characters that died this battle lose all campaign EXP.
+        const deadCharIds = new Set<string>();
+        for (const ev of result.events ?? []) {
+          if (ev.kind === "death" && ev.unitId?.startsWith("player-")) {
+            const parts = ev.unitId.split("-");
+            const charId = parts.length >= 3 ? parts.slice(1, -1).join("-") : ev.unitId;
+            deadCharIds.add(charId);
+          }
+        }
+        for (const charId of deadCharIds) {
+          ctx!.expByChar[charId] = 0;
+        }
+        // Add new EXP for surviving characters.
         if (result.expGains) {
           const entries = Object.entries(result.expGains).filter(([, v]) => v > 0);
-          if (entries.length > 0) {
-            // Extract characterId from unit IDs like "player-blue-0" → "blue"
-            for (const [unitId, exp] of entries) {
-              const parts = unitId.split("-");
-              const charId = parts.length >= 3 ? parts.slice(1, -1).join("-") : unitId;
+          for (const [unitId, exp] of entries) {
+            const parts = unitId.split("-");
+            const charId = parts.length >= 3 ? parts.slice(1, -1).join("-") : unitId;
+            if (!deadCharIds.has(charId)) {
               ctx!.expByChar[charId] = (ctx!.expByChar[charId] ?? 0) + exp;
             }
+          }
             // Persist per-character EXP to server
             if (userId) {
               for (const [charId, exp] of Object.entries(ctx!.expByChar)) {
@@ -1435,7 +1448,6 @@ function BattleStage({
             const maxExp = 2000;
             const frame = Math.min(totalFrames - 1, Math.floor((primaryExp / maxExp) * totalFrames));
             if (ctx!.manaTank) ctx!.manaTank.currentFrame = Math.max(0, frame);
-          }
         }
         onEnd(result.result);
       }
@@ -1450,6 +1462,7 @@ function BattleStage({
         replay: () => {
           runReplay().catch(console.error);
         },
+        getManaCount: () => ctx!.manaCount ?? 0,
       };
       onReady();
       runReplay().catch(console.error);

@@ -1,0 +1,1 @@
+ALTER TABLE "user_stats" ADD COLUMN "total_mana" integer DEFAULT 0 NOT NULL;

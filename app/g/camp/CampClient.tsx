@@ -14,6 +14,7 @@ import type {
 import { BATTLE_REWARD_EFFECTS, BOARD } from "@/lib/battle/types";
 import { normalizeConfig, requestResolve, finalHpFromResult, useReplayRefs } from "@/app/studio/mock-battle/replayKit";
 import BattleStage, { deployHex, type BootstrapConfig } from "@/app/studio/mock-battle/BattleStage";
+import { useAuth } from "@/app/auth/AuthGuard";
 import GameScreenShell from "@/app/studio/mock-battle/GameScreenShell";
 import { CAMP_PAGE_CSS } from "./campStyles";
 
@@ -68,6 +69,8 @@ export default function CampClient() {
   const [playerParty, setPlayerParty] = useState<PartyMemberInput[]>([]);
   const [result, setResult] = useState<ResolveResult | null>(null);
   const [waveKey, setWaveKey] = useState(0);
+  const { user: authUser } = useAuth();
+  const userId = authUser?.uid;
   const [error, setError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
@@ -345,6 +348,15 @@ export default function CampClient() {
           });
         }
       } else {
+        // Campaign won — transfer mana count to user pool
+        const mana = refs.controlsRef.current?.getManaCount?.() ?? 0;
+        if (mana > 0 && userId) {
+          fetch("/api/user/stats", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, totalMana: mana }),
+          }).catch(() => {});
+        }
         setPhase("won");
       }
     },
@@ -469,7 +481,6 @@ export default function CampClient() {
               bottom={renderPlayerStats()}
               center={
                 <BattleStage
-                  key={waveKey}
                   result={result}
                   config={config}
                   {...refs}

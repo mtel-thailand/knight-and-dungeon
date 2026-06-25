@@ -36,12 +36,13 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-  const { userId, totalExp, totalWins, totalLosses, totalKills } = body as {
+  const { userId, totalExp, totalWins, totalLosses, totalKills, totalMana } = body as {
     userId?: string;
     totalExp?: number;
     totalWins?: number;
     totalLosses?: number;
     totalKills?: number;
+    totalMana?: number;
   };
   if (!userId || typeof userId !== "string") {
     return NextResponse.json({ ok: false, error: "userId required" }, { status: 400 });
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
     if (typeof totalWins === "number") updates.total_wins = totalWins;
     if (typeof totalLosses === "number") updates.total_losses = totalLosses;
     if (typeof totalKills === "number") updates.total_kills = totalKills;
+    if (typeof totalMana === "number") updates.total_mana = totalMana;
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ ok: false, error: "no fields to update" }, { status: 400 });
     }

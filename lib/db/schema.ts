@@ -229,5 +229,6 @@ export const userStats = pgTable(
     totalLosses: integer("total_losses").notNull().default(0),
     totalExp: integer("total_exp").notNull().default(0),
     totalKills: integer("total_kills").notNull().default(0),
+    totalMana: integer("total_mana").notNull().default(0),
   },
 );

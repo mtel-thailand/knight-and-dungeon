@@ -143,5 +143,6 @@ CREATE TABLE IF NOT EXISTS user_stats (
     total_wins  INTEGER NOT NULL DEFAULT 0,
     total_losses INTEGER NOT NULL DEFAULT 0,
     total_exp    INTEGER NOT NULL DEFAULT 0,
-    total_kills  INTEGER NOT NULL DEFAULT 0
+    total_kills  INTEGER NOT NULL DEFAULT 0,
+    total_mana   INTEGER NOT NULL DEFAULT 0
 );

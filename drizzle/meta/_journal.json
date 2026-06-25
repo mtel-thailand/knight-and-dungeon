@@ -15,6 +15,13 @@
       "when": 1782382407038,
       "tag": "0001_misty_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782388152529,
+      "tag": "0002_clumsy_rockslide",
+      "breakpoints": true
     }
   ]
 }
