@@ -1189,7 +1189,8 @@ function BattleStage({
           shard.alpha = 1 - e * 0.85;
           shard.scale.set(0.25 * (1 - e));
         }, myId);
-        // Brief mana tank glow on absorption
+        // Brief mana tank glow + sound on absorption
+        playSound("/assets/audio/crystal-absorb.wav");
         if (manaTank) {
           manaTank.tint = 0xffff88;
           await wait(80);
