@@ -440,9 +440,6 @@ function BattleStage({
       const manaTank = ctx!.manaTank;
       const manaCountText = ctx!.manaCountText;
       const crystalShardTex = ctx!.crystalShardTex;
-      // Reset mana count for this battle
-      ctx!.manaCount = 0;
-      if (manaCountText) manaCountText.text = "0/10";
 
       const catalog: any[] = config.animations ?? [];
       const framesByKey: Record<string, any[]> = {};
