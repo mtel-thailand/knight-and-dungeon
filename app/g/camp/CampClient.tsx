@@ -144,6 +144,8 @@ export default function CampClient() {
   const [rewardChoices, setRewardChoices] = useState<BattleRewardDef[]>([]);
   const [pendingRewardParty, setPendingRewardParty] = useState<PartyMemberInput[]>([]);
   const [pendingRewardWave, setPendingRewardWave] = useState(1);
+  const [rerollCount, setRerollCount] = useState(0);
+  const [claimedRewards, setClaimedRewards] = useState<BattleRewardDef[]>([]);
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>(["blue"]);
   const [userCharacters, setUserCharacters] = useState<Record<string, { level: number; exp: number }>>({});
   const [livePlayerHp, setLivePlayerHp] = useState<Record<string, number>>({});
@@ -223,10 +225,19 @@ export default function CampClient() {
 
   function chooseReward(reward: BattleRewardDef) {
     const nextParty = applyRewardToParty(reward, pendingRewardParty);
-    const nextWave = pendingRewardWave;
+    setPendingRewardParty(nextParty);
     setPlayerParty(nextParty);
+    setClaimedRewards((prev) => [...prev, reward]);
+    setRewardChoices((prev) => prev.filter((r) => r !== reward));
+  }
+
+  function confirmRewards() {
+    const nextParty = pendingRewardParty;
+    const nextWave = pendingRewardWave;
     setRewardChoices([]);
     setPendingRewardParty([]);
+    setClaimedRewards([]);
+    setRerollCount(0);
     setWaveIndex(nextWave);
     pausedRef.current = false;
     setPaused(false);
@@ -428,6 +439,8 @@ export default function CampClient() {
         if (choices.length > 0) {
           setPendingRewardParty(nextParty);
           setPendingRewardWave(curWave + 1);
+          setRerollCount(0);
+          setClaimedRewards([]);
           setRewardChoices(choices);
           pausedRef.current = true;
           setPaused(true);
@@ -605,7 +618,9 @@ export default function CampClient() {
             {rewardChoices.length > 0 ? (
               <div className="camp-reward-scrim">
                 <div className="camp-reward-panel">
-                  <h2 className="camp-reward-title">Choose one</h2>
+                  <h2 className="camp-reward-title">
+                    Pick a reward ({claimedRewards.length} / {claimedRewards.length + rewardChoices.length})
+                  </h2>
                   <div className="camp-reward-cards">
                     {rewardChoices.map((reward) => (
                       <button
@@ -627,15 +642,26 @@ export default function CampClient() {
                     <button
                       className="camp-reroll-btn"
                       type="button"
-                      disabled={(refs.controlsRef.current?.getManaCount?.() ?? 0) < 3}
+                      disabled={
+                        rerollCount >= 3 ||
+                        (refs.controlsRef.current?.getManaCount?.() ?? 0) < rerollCount + 1
+                      }
                       onClick={() => {
                         const mana = refs.controlsRef.current?.getManaCount?.() ?? 0;
-                        if (mana < 3) return;
-                        refs.controlsRef.current?.setManaCount?.(mana - 3);
-                        setRewardChoices(pickRewardChoices(configRef.current?.battleRewards ?? []));
+                        const cost = rerollCount + 1;
+                        if (mana < cost) return;
+                        refs.controlsRef.current?.setManaCount?.(mana - cost);
+                        setRerollCount((prev) => prev + 1);
+                        // Re-roll only the remaining slots
+                        const count = rewardChoices.length;
+                        const all = pickRewardChoices(configRef.current?.battleRewards ?? []);
+                        setRewardChoices(all.slice(0, count));
                       }}
                     >
-                      Re-roll (3 mana)
+                      Re-roll ({rerollCount + 1} mana)
+                    </button>
+                    <button className="camp-confirm-btn" type="button" onClick={confirmRewards}>
+                      Continue →
                     </button>
                   </div>
                 </div>

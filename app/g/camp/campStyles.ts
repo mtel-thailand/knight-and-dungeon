@@ -287,6 +287,12 @@ export const CAMP_PAGE_CSS = `
 }
 .camp-reroll-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); border-color: #3b82f6; }
 .camp-reroll-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.camp-confirm-btn {
+  padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer; margin-left: 10px;
+  background: linear-gradient(180deg, #46eccf, #2bbfa6); color: #04140f; font-size: 13px; font-weight: 600;
+  transition: box-shadow 0.12s;
+}
+.camp-confirm-btn:hover { box-shadow: 0 4px 14px rgba(43,191,166,0.35); }
 .camp-reward-card {
   width: 100%; aspect-ratio: 2 / 3;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
