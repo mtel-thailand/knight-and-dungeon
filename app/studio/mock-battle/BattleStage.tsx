@@ -1201,11 +1201,11 @@ function BattleStage({
         // Sound + advance mana gauge on absorption
         playSound("audio/crystal-absorb.wav", 2);
         if (manaTank) {
-          // Snap to specific frames per crystal collected (10 crystals = full)
-          const MANA_FRAMES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 96];
+          // Snap to specific frames per crystal (user-defined: 0,33,37,41,52,63,74,85,96,107)
+          const MANA_FRAMES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 107];
           ctx!.manaCount = Math.min(10, (ctx!.manaCount ?? 0) + 1);
           const idx = Math.min(ctx!.manaCount - 1, MANA_FRAMES.length - 1);
-          manaTank.currentFrame = Math.min(96, MANA_FRAMES[idx]);
+          manaTank.currentFrame = Math.min(107, MANA_FRAMES[idx]);
           ctx!.manaLevel = manaTank.currentFrame;
         }
         shard.destroy();
