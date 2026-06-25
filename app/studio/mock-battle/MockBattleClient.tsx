@@ -9,10 +9,11 @@ import type {
   ResolveResult,
   SpellDef,
   SpellInput,
+  SpellTextConfig as SpellTextCfg,
   Team,
   UnitStats,
 } from "@/lib/battle/types";
-import { BOARD, DEFAULT_DAMAGE_CONFIG, STAT_BOUNDS } from "@/lib/battle/types";
+import { BOARD, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_TEXT_CONFIG, STAT_BOUNDS } from "@/lib/battle/types";
 import GameScreenShell from "./GameScreenShell";
 import { BoardPreview } from "./BoardPreview";
 import { PartyColumn } from "./PartyColumn";
@@ -225,6 +226,45 @@ export default function MockBattleClient() {
     redrawHealthBarsRef.current();
   }, [scheduleDmgSave]);
 
+  // Display panel — live spell-text knobs. Same stable-ref bridge as dmgCfg;
+  // the ref lets the once-built spawnSpellShout closure read fresh values
+  // without the canvas effect re-running.
+  const [spellTextCfg, setSpellTextCfg] = useState<SpellTextCfg>(() => ({
+    ...DEFAULT_SPELL_TEXT_CONFIG,
+  }));
+  const spellTextCfgRef = useRef<SpellTextCfg>(spellTextCfg);
+  spellTextCfgRef.current = spellTextCfg;
+  const spellTextSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleSpellTextSave = useCallback(() => {
+    if (spellTextSaveTimer.current) clearTimeout(spellTextSaveTimer.current);
+    spellTextSaveTimer.current = setTimeout(() => {
+      fetch("/api/config/spell-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(spellTextCfgRef.current),
+      }).catch(() => {});
+    }, 400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (spellTextSaveTimer.current) clearTimeout(spellTextSaveTimer.current);
+    },
+    [],
+  );
+  const setSpellTextField = useCallback(
+    (key: keyof SpellTextCfg, value: number) => {
+      setSpellTextCfg((prev) => ({ ...prev, [key]: value }));
+      spellTextCfgRef.current = { ...spellTextCfgRef.current, [key]: value };
+      scheduleSpellTextSave();
+    },
+    [scheduleSpellTextSave],
+  );
+  const resetSpellTextCfg = useCallback(() => {
+    setSpellTextCfg({ ...DEFAULT_SPELL_TEXT_CONFIG });
+    spellTextCfgRef.current = { ...DEFAULT_SPELL_TEXT_CONFIG };
+    scheduleSpellTextSave();
+  }, [scheduleSpellTextSave]);
+
   // Board-view config — same bridge pattern as dmgCfg. `mapCfg` drives the
   // panel's Board-view sliders; `mapCfgRef` mirrors it for the effect; the
   // effect points `applyMapRef` at its live re-layout, so a slider tweak
@@ -347,6 +387,8 @@ export default function MockBattleClient() {
       // was created with defaults before this fetch resolved). Uses setDmgCfg
       // directly — NOT setDmgField — so loading never triggers a re-save.
       setDmgCfg({ ...DEFAULT_DAMAGE_CONFIG, ...(cfg.damageConfig ?? {}) });
+      // Same for spell-text config (panel's Spell shout sliders).
+      setSpellTextCfg({ ...DEFAULT_SPELL_TEXT_CONFIG, ...(cfg.spellTextConfig ?? {}) });
       // Same for the board view (drives the panel's Board-view sliders); setMapCfg
       // directly so loading never triggers a re-save.
       setMapCfg({ ...DEFAULT_MAP, ...(cfg.mapConfig ?? {}) });
@@ -668,6 +710,7 @@ export default function MockBattleClient() {
                     config={config}
                     controlsRef={controlsRef}
                     dmgCfgRef={dmgCfgRef}
+                    spellTextCfgRef={spellTextCfgRef}
                     redrawHealthBarsRef={redrawHealthBarsRef}
                     mapCfgRef={mapCfgRef}
                     applyMapRef={applyMapRef}
@@ -687,6 +730,8 @@ export default function MockBattleClient() {
               onToggle={() => setUiPanelOpen((v) => !v)}
               dmgCfg={dmgCfg}
               onDmgChange={setDmgField}
+              spellTextCfg={spellTextCfg}
+              onSpellTextChange={setSpellTextField}
               mapCfg={mapCfg}
               onMapChange={setMapField}
               topDown={topDown}

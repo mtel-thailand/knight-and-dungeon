@@ -2,13 +2,14 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import Database from "better-sqlite3";
-import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG } from "@/lib/battle/types";
+import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_TEXT_CONFIG } from "@/lib/battle/types";
 import type {
   UnitStats,
   CharacterRoleMap,
   BattleEventRole,
   MapConfig,
   DamageConfig,
+  SpellTextConfig,
   SpellDef,
   SpellTransition,
   SpellType,
@@ -90,6 +91,10 @@ function createDb(): Database.Database {
       rotation          REAL
     );
     CREATE TABLE IF NOT EXISTS damage_config (
+      id   INTEGER PRIMARY KEY CHECK (id = 1),
+      data TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS spell_text_config (
       id   INTEGER PRIMARY KEY CHECK (id = 1),
       data TEXT NOT NULL
     );
@@ -666,6 +671,38 @@ export function saveDamageConfig(cfg: DamageConfig): void {
   getDb()
     .prepare(
       `INSERT INTO damage_config (id, data) VALUES (1, @data)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+    )
+    .run({ data: JSON.stringify(cfg) });
+}
+
+// ---------------------------------------------------------------------------
+// Spell-text config (/studio/mock-battle) — a single-row (id=1) table that
+// stores the floating spell-name callout layout as a JSON blob (NOT columns),
+// so new knobs need no migration. Read via GET /api/config (spellTextConfig)
+// and written through POST /api/config/spell-text; falls back to (and merges
+// over) DEFAULT_SPELL_TEXT_CONFIG so missing/extra keys are tolerated.
+// ---------------------------------------------------------------------------
+
+/** The persisted spell-text config, merged over DEFAULT_SPELL_TEXT_CONFIG. */
+export function getSpellTextConfig(): SpellTextConfig {
+  const row = getDb()
+    .prepare("SELECT data FROM spell_text_config WHERE id = 1")
+    .get() as { data: string } | undefined;
+  if (!row) return DEFAULT_SPELL_TEXT_CONFIG;
+  try {
+    const parsed = JSON.parse(row.data) as Partial<SpellTextConfig>;
+    return { ...DEFAULT_SPELL_TEXT_CONFIG, ...parsed };
+  } catch {
+    return DEFAULT_SPELL_TEXT_CONFIG;
+  }
+}
+
+/** Idempotent upsert of the single spell-text config row (id=1). */
+export function saveSpellTextConfig(cfg: SpellTextConfig): void {
+  getDb()
+    .prepare(
+      `INSERT INTO spell_text_config (id, data) VALUES (1, @data)
          ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
     )
     .run({ data: JSON.stringify(cfg) });

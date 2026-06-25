@@ -1,6 +1,6 @@
 'use client';
 
-import type { DamageConfig as DamageCfg, MapConfig } from "@/lib/battle/types";
+import type { DamageConfig as DamageCfg, MapConfig, SpellTextConfig as SpellTextCfg } from "@/lib/battle/types";
 
 // =============================================================================
 // SECTION > DisplayConfigPanel (React subcomponent)
@@ -8,7 +8,7 @@ import type { DamageConfig as DamageCfg, MapConfig } from "@/lib/battle/types";
 // Owner: mock-battle (G) - see app/studio/mock-battle/AGENTS.md
 // =============================================================================
 
-type PanelGroup = "damage" | "board";
+type PanelGroup = "damage" | "board" | "spell_text";
 
 type SliderControl = {
   key: string; // a key of the section group's config (DamageCfg | MapConfig)
@@ -54,6 +54,19 @@ const UI_SECTIONS: { title: string; group: PanelGroup; controls: SliderControl[]
     ],
   },
   {
+    title: "Spell shout",
+    group: "spell_text",
+    controls: [
+      { key: "size", label: "Font size", min: 0.1, max: 0.9, step: 0.01, digits: 2 },
+      { key: "height", label: "Height", min: 0, max: 1, step: 0.02, digits: 2 },
+      { key: "offsetX", label: "Offset X", min: -1, max: 1, step: 0.02, digits: 2 },
+      { key: "offsetY", label: "Offset Y", min: -1, max: 1, step: 0.02, digits: 2 },
+      { key: "rise", label: "Rise", min: 0, max: 1.5, step: 0.02, digits: 2 },
+      { key: "stroke", label: "Stroke", min: 0, max: 12, step: 1, suffix: "px" },
+      { key: "durationMs", label: "Float time", min: 300, max: 2500, step: 20, suffix: "ms" },
+    ],
+  },
+  {
     title: "Board view",
     group: "board",
     controls: [
@@ -72,6 +85,8 @@ export function DisplayConfigPanel({
   onToggle,
   dmgCfg,
   onDmgChange,
+  spellTextCfg,
+  onSpellTextChange,
   mapCfg,
   onMapChange,
   topDown,
@@ -86,6 +101,8 @@ export function DisplayConfigPanel({
   onToggle: () => void;
   dmgCfg: DamageCfg;
   onDmgChange: (key: keyof DamageCfg, value: number) => void;
+  spellTextCfg: SpellTextCfg;
+  onSpellTextChange: (key: keyof SpellTextCfg, value: number) => void;
   mapCfg: MapConfig;
   onMapChange: (key: keyof MapConfig, value: number) => void;
   topDown: boolean;
@@ -120,6 +137,7 @@ export function DisplayConfigPanel({
         <div className="mb-ui-scroll">
           {UI_SECTIONS.map((section) => {
             const isBoard = section.group === "board";
+            const isSpell = section.group === "spell_text";
             return (
               <div key={section.title} className="mb-ui-section">
                 <div className="mb-ui-section-title">{section.title}</div>
@@ -147,7 +165,9 @@ export function DisplayConfigPanel({
                 {section.controls.map((c) => {
                   const value = isBoard
                     ? mapCfg[c.key as keyof MapConfig]
-                    : dmgCfg[c.key as keyof DamageCfg];
+                    : isSpell
+                      ? spellTextCfg[c.key as keyof SpellTextCfg]
+                      : dmgCfg[c.key as keyof DamageCfg];
                   // Top-down overrides tilt/rotation/ratio — lock those while it's
                   // on (tile width + scale stay live), mirroring the old overlay.
                   const locked =
@@ -175,6 +195,7 @@ export function DisplayConfigPanel({
                         onChange={(e) => {
                           const v = Number(e.target.value);
                           if (isBoard) onMapChange(c.key as keyof MapConfig, v);
+                          else if (isSpell) onSpellTextChange(c.key as keyof SpellTextCfg, v);
                           else onDmgChange(c.key as keyof DamageCfg, v);
                         }}
                       />

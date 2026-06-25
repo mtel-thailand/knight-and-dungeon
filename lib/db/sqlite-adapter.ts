@@ -13,6 +13,7 @@ import type {
   CharacterRoleMap,
   MapConfig,
   DamageConfig,
+  SpellTextConfig,
   SpellDef,
   CampaignDef,
 } from "@/lib/battle/types";
@@ -51,6 +52,10 @@ export async function getMapConfig(): Promise<MapConfig> {
 
 export async function getDamageConfig(): Promise<DamageConfig> {
   return (await db()).getDamageConfig();
+}
+
+export async function getSpellTextConfig(): Promise<SpellTextConfig> {
+  return (await db()).getSpellTextConfig();
 }
 
 export async function listSpells(): Promise<SpellDef[]> {

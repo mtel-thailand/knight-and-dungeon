@@ -10,10 +10,11 @@ import type {
   MapConfig,
   ResolveResult,
   SpellDef,
+  SpellTextConfig as SpellTextCfg,
   Team,
   UnitStats,
 } from "@/lib/battle/types";
-export type { DamageCfg };
+export type { DamageCfg, SpellTextCfg };
 import {
   BOARD,
   DEFAULT_SPELL_DURATION,
@@ -151,6 +152,7 @@ export type BootstrapConfig = {
   roleMaps?: Record<string, CharacterRoleMap>;
   mapConfig?: MapConfig;
   damageConfig?: DamageCfg;
+  spellTextConfig?: SpellTextCfg;
   spells?: SpellDef[];
   characterSpells?: Record<string, string[]>;
   // Last-saved mock-battle builder parties (opaque to the server). null/absent
@@ -202,6 +204,9 @@ export type StageProps = {
   // Live damage-number config. A stable ref (never in the effect deps) so the
   // panel can retune numbers mid-battle without tearing down the Pixi app.
   dmgCfgRef: React.MutableRefObject<DamageCfg>;
+  // Live spell-text config. Same stable-ref pattern as dmgCfgRef — the panel
+  // retunes spell-name shout knobs mid-battle without tearing down Pixi.
+  spellTextCfgRef: React.MutableRefObject<SpellTextCfg>;
   // Repaint hook: the effect points this at its redrawHealthBars() so the panel
   // can re-geometry the HP bars live (same stable-ref pattern as dmgCfgRef).
   redrawHealthBarsRef: React.MutableRefObject<() => void>;
@@ -223,6 +228,7 @@ function BattleStage({
   config,
   controlsRef,
   dmgCfgRef,
+  spellTextCfgRef,
   redrawHealthBarsRef,
   mapCfgRef,
   applyMapRef,
@@ -774,6 +780,58 @@ function BattleStage({
         });
       }
 
+      // The casting unit "shouts" the spell's name — a floating name callout
+      // above the caster at cast time (mirrors spawnDamage's text float/fade).
+      function spawnSpellShout(su: SpriteUnit, name: string, myId: number) {
+        if (!name) return;
+        const cfg = spellTextCfgRef.current;
+        const t = new Text({
+          text: name.toUpperCase(),
+          style: {
+            fontFamily: dmgFont.style.fontFamily,
+            fontSize: cfg.size * TW0,
+            fontWeight: "700",
+            fill: 0xeaf2ff,
+            stroke: { color: 0x1b3a7a, width: cfg.stroke * pxScale },
+          },
+        });
+        t.resolution = Math.min(
+          4,
+          (window.devicePixelRatio || 1) *
+            Math.max(1, (boardLayout.tileW / TW0) * boardLayout.boardScale),
+        );
+        t.anchor.set(0.5);
+        // Centered above the caster's head, parented to the node so it tracks +
+        // billboards/scales with the unit (like the damage numbers do).
+        const baseX = TW0 * cfg.offsetX;
+        const baseY = -su.dispH - TW0 * (cfg.height + cfg.offsetY);
+        t.position.set(baseX, baseY);
+        su.node.addChild(t);
+        tween(
+          cfg.durationMs,
+          (p) => {
+            // Quick pop-in (scale + fade-in), then drift up and fade out.
+            const popIn = Math.min(1, p / 0.18);
+            const sc = 0.55 + 0.6 * easeOutCubic(popIn);
+            t.scale.set(sc, sc);
+            t.position.y = baseY - TW0 * cfg.rise * easeOutCubic(p);
+            if (p < 0.18) {
+              t.alpha = popIn;
+            } else {
+              const f = (p - 0.18) / 0.82;
+              t.alpha = 1 - f * f;
+            }
+          },
+          myId,
+        ).then(() => {
+          try {
+            t.destroy();
+          } catch {
+            /* already torn down */
+          }
+        });
+      }
+
       function updateHp(su: SpriteUnit, newHp: number, myId: number) {
         const from = su.hp / su.maxHp;
         const to = clamp(newHp / su.maxHp, 0, 1);
@@ -1063,7 +1121,14 @@ function BattleStage({
               schedule(ids, async () => {
                 // Cast wind-up reuses the attack pose (+ facing), THEN the
                 // projectile flies; HP/number land on arrival (impact-after-flight).
-                if (src && !src.dead) await doAttack(src, tgt, myId);
+                if (src && !src.dead) {
+                  // The caster shouts the spell's name as the cast begins.
+                  const spellName = (config.spells ?? []).find(
+                    (s) => s.id === ev.spellId,
+                  )?.name;
+                  if (spellName) spawnSpellShout(src, spellName, myId);
+                  await doAttack(src, tgt, myId);
+                }
                 await flyProjectile(ev.spellId, ev.from, ev.to, myId);
                 if (destroyed || genId !== myId || !tgt) return;
                 await Promise.all([

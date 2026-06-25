@@ -319,3 +319,39 @@ export const DAMAGE_BOUNDS: Record<keyof DamageConfig, [number, number]> = {
   barHeight: [2, 20],
   barGap: [-40, 60],
 };
+
+// ---- Spell-text config (spell-name "shout" persistence) ----
+
+// mock-battle Display panel: the floating spell-name callout ("shout") shown
+// above a caster when it casts a spell. Persisted as a single row (id=1) in
+// spell_text_config — a JSON blob (NOT columns), so new knobs need no migration.
+// size/height/offset/rise are multipliers of the live tile size; stroke is px;
+// durationMs is the float lifetime. Defaults preserve the original shout look.
+export type SpellTextConfig = {
+  size: number; // spell-name font size           (× tile size)
+  height: number; // gap above the caster's head   (× tile size)
+  offsetX: number; // horizontal nudge             (× tile size)
+  offsetY: number; // vertical nudge, + = up        (× tile size)
+  rise: number; // float-up distance               (× tile size)
+  stroke: number; // outline width (px)
+  durationMs: number; // float lifetime (ms)
+};
+export const DEFAULT_SPELL_TEXT_CONFIG: SpellTextConfig = {
+  size: 0.32,
+  height: 0.2,
+  offsetX: 0,
+  offsetY: 0,
+  rise: 0.9,
+  stroke: 5,
+  durationMs: 1100,
+};
+// [min, max] clamp bounds (mirror the panel sliders) — used by the writer route.
+export const SPELL_TEXT_BOUNDS: Record<keyof SpellTextConfig, [number, number]> = {
+  size: [0.1, 0.9],
+  height: [0, 1],
+  offsetX: [-1, 1],
+  offsetY: [-1, 1],
+  rise: [0, 1.5],
+  stroke: [0, 12],
+  durationMs: [300, 2500],
+};
