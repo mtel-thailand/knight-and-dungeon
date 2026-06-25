@@ -80,10 +80,7 @@ function CharacterAvatar({ charId, name, animations }: { charId: string; name: s
     };
   }, [charId, animations]);
   return (
-    <div className="camp-char-avatar">
-      <div ref={ref} style={{ width: 64, height: 64 }} />
-      <span className="camp-char-name">{name}</span>
-    </div>
+    <div ref={ref} style={{ width: 64, height: 64 }} />
   );
 }
 
@@ -147,7 +144,7 @@ export default function CampClient() {
   const [rerollCount, setRerollCount] = useState(0);
   const [claimedRewards, setClaimedRewards] = useState<BattleRewardDef[]>([]);
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>(["blue"]);
-  const [userCharacters, setUserCharacters] = useState<Record<string, { level: number; exp: number }>>({});
+  const [userCharacters, setUserCharacters] = useState<Record<string, { level: number; exp: number; avatarUrl?: string }>>({});
   const [livePlayerHp, setLivePlayerHp] = useState<Record<string, number>>({});
   const [resolvingWave, setResolvingWave] = useState(false);
 
@@ -332,10 +329,10 @@ export default function CampClient() {
         const ucData = await ucRes.json();
         if (cancelled) return;
         if (ucData.ok && Array.isArray(ucData.characters)) {
-          const owned: Record<string, { level: number; exp: number }> = {};
+          const owned: Record<string, { level: number; exp: number; avatarUrl?: string }> = {};
           const ownedIds: string[] = [];
           for (const c of ucData.characters) {
-            owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0 };
+            owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0, avatarUrl: c.avatarUrl };
             ownedIds.push(c.characterId);
           }
           setUserCharacters(owned);
@@ -542,8 +539,8 @@ export default function CampClient() {
             .then((r) => r.json())
             .then((ucData) => {
               if (ucData.ok && Array.isArray(ucData.characters)) {
-                const owned: Record<string, { level: number; exp: number }> = {};
-                for (const c of ucData.characters) owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0 };
+                const owned: Record<string, { level: number; exp: number; avatarUrl?: string }> = {};
+                for (const c of ucData.characters) owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0, avatarUrl: c.avatarUrl };
                 setUserCharacters(owned);
               }
             }).catch(() => {});
@@ -759,11 +756,18 @@ export default function CampClient() {
                           ));
                         }}
                       >
-                        <CharacterAvatar
-                          charId={ch.id}
-                          name={ch.name}
-                          animations={config?.animations ?? []}
-                        />
+                        <div className="camp-char-avatar">
+                          {uc?.avatarUrl ? (
+                            <img src={uc.avatarUrl} alt={ch.name} className="camp-char-img" />
+                          ) : (
+                            <CharacterAvatar
+                              charId={ch.id}
+                              name={ch.name}
+                              animations={config?.animations ?? []}
+                            />
+                          )}
+                        </div>
+                        <span className="camp-char-name">{ch.name}</span>
                         {uc ? <span className="camp-char-lv">Lv.{uc.level}</span> : null}
                       </button>
                     );

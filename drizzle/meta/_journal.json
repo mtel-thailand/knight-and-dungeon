@@ -22,6 +22,13 @@
       "when": 1782388152529,
       "tag": "0002_clumsy_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782392196376,
+      "tag": "0003_whole_sabra",
+      "breakpoints": true
     }
   ]
 }

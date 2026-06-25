@@ -214,6 +214,7 @@ export const userCharacters = pgTable(
     actionSpeed: doublePrecision("action_speed").notNull(),
     range: integer("range").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
+    avatarUrl: text("avatar_url"),
   },
   (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
 );
