@@ -4,6 +4,8 @@ import { getDb } from "@/lib/db/client";
 import { eq, and } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
 import { uploadAsset } from "@/lib/firebase";
+import { writeFile, mkdir } from "fs/promises";
+import path from "path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +15,7 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5MB
 /**
  * POST /api/user/avatar — Upload a character avatar (multipart).
  * Body: { image: File, userId: string, characterId: string }
- * Resizes/converts to 128×128 max, uploads to Firebase, stores URL.
+ * Resizes/converts to 128×128 max, uploads to Firebase (falls back to local /public/assets/avatars/).
  */
 export async function POST(req: NextRequest) {
   let form: FormData;
@@ -45,9 +47,19 @@ export async function POST(req: NextRequest) {
       .png()
       .toBuffer();
 
-    const ext = image.name?.split(".").pop() || "png";
-    const destPath = `avatars/${userId}/${characterId}.${ext}`;
-    const url = await uploadAsset(resized, destPath, "image/png");
+    // Try Firebase upload, fall back to local file
+    let url: string;
+    const pngName = `avatar-${characterId}.png`;
+    try {
+      const destPath = `avatars/${userId}/${pngName}`;
+      url = await uploadAsset(resized, destPath, "image/png");
+    } catch (fbErr) {
+      console.warn("[avatar] Firebase upload failed — saving locally:", fbErr instanceof Error ? fbErr.message : String(fbErr));
+      const localDir = path.join(process.cwd(), "public/assets/avatars");
+      await mkdir(localDir, { recursive: true });
+      await writeFile(path.join(localDir, pngName), resized);
+      url = `/assets/avatars/${pngName}`;
+    }
 
     // Store URL in user_characters
     const db = getDb();
