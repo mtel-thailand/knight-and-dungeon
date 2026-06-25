@@ -227,7 +227,7 @@ export type BattleEvent =
       damage: number;
       targetHp: number;
     }
-  | { t: number; kind: "death"; unitId: string }
+  | { t: number; kind: "death"; unitId: string; killedBy?: string }
   | { t: number; kind: "end"; result: "win" | "lose" | "draw" };
 
 export type UnitSnapshot = {
@@ -264,6 +264,7 @@ export type ResolveResult = {
   initialState: BattleSnapshot;
   finalState?: BattleSnapshot; // closing board after the sim (survivor HP for campaign wave carryover); resolveBattle always emits it, the client mock-resolve path may omit it
   events: BattleEvent[];
+  expGains?: Record<string, number>; // unitId → EXP gained from kills (killed enemy's maxHp)
 };
 
 // ---- CMS / management contract ----

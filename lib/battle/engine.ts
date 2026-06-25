@@ -317,12 +317,13 @@ export function executeAction(action: Action, battle: BattleState): void {
 
 // Mark every unit at <= 0 HP dead immediately (so it is skipped for the rest of the
 // tick) and emit a death event. Runs after every action.
-export function checkDeaths(battle: BattleState): void {
+// `killedBy` is the source unit that dealt the killing blow (tracked for EXP).
+export function checkDeaths(battle: BattleState, killedBy?: string): void {
   for (const unit of battle.units) {
     if (!unit.isDead && unit.hp <= 0) {
       unit.hp = 0;
       unit.isDead = true;
-      battle.events.push({ t: battle.currentTime, kind: "death", unitId: unit.id });
+      battle.events.push({ t: battle.currentTime, kind: "death", unitId: unit.id, killedBy });
     }
   }
 }
@@ -381,7 +382,7 @@ export function updateBattle(battle: BattleState, dt: number): void {
       executeAction(action, battle);
       unit.actionGauge -= 100; // carryover, not reset
 
-      checkDeaths(battle);
+      checkDeaths(battle, action.sourceId);
       checkBattleEnd(battle);
       if (battle.status !== "running") return;
     }
@@ -454,10 +455,22 @@ export function resolveBattle(req: ResolveRequest): ResolveResult {
   // determinism (a field-absent request still produces byte-identical events).
   const finalState = snapshotInitial(battle);
 
+  // Compute EXP gains: each kill awards EXP equal to the defeated unit's maxHp.
+  const unitMaxHp = new Map<string, number>();
+  for (const u of battle.units) unitMaxHp.set(u.id, u.maxHp);
+  const expGains: Record<string, number> = {};
+  for (const ev of battle.events) {
+    if (ev.kind === "death" && ev.killedBy) {
+      const exp = unitMaxHp.get(ev.unitId) ?? 0;
+      expGains[ev.killedBy] = (expGains[ev.killedBy] ?? 0) + exp;
+    }
+  }
+
   return {
     result: battle.status as "win" | "lose" | "draw",
     initialState,
     finalState,
     events: battle.events,
+    expGains: Object.keys(expGains).length > 0 ? expGains : undefined,
   };
 }
