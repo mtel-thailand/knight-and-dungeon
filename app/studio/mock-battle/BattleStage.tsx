@@ -1192,23 +1192,11 @@ function BattleStage({
         await tween(500, (p) => {
           shard.alpha = 1 - easeOutCubic(p);
         }, myId);
-        // Brief mana tank glow + sound on absorption
+        // Sound + advance mana gauge on absorption
         playSound("audio/crystal-absorb.wav", 2);
         if (manaTank) {
-          manaTank.tint = 0xffff88;
-          await wait(80);
-          manaTank.tint = 0xffffff;
-          // Advance mana gauge: 10 crystals fill from empty (frame 0) to full (frame 96)
+          // 10 crystals fill from empty (frame 0) to full (frame 96)
           manaTank.currentFrame = Math.min(96, (manaTank.currentFrame ?? 0) + 10);
-          // Full-gauge pulse effect
-          if (manaTank.currentFrame >= 96) {
-            manaTank.tint = 0xffdd44;
-            await wait(120);
-            manaTank.tint = 0xffffff;
-            manaTank.scale.set(0.55);
-            await wait(100);
-            manaTank.scale.set(0.5);
-          }
         }
         shard.destroy();
       }
