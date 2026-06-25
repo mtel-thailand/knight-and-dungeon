@@ -623,6 +623,21 @@ export default function CampClient() {
                       </button>
                     ))}
                   </div>
+                  <div className="camp-reroll-row">
+                    <button
+                      className="camp-reroll-btn"
+                      type="button"
+                      disabled={(refs.controlsRef.current?.getManaCount?.() ?? 0) < 3}
+                      onClick={() => {
+                        const mana = refs.controlsRef.current?.getManaCount?.() ?? 0;
+                        if (mana < 3) return;
+                        refs.controlsRef.current?.setManaCount?.(mana - 3);
+                        setRewardChoices(pickRewardChoices(configRef.current?.battleRewards ?? []));
+                      }}
+                    >
+                      Re-roll (3 mana)
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : null}

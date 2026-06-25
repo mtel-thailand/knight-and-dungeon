@@ -203,7 +203,7 @@ export type StageProps = {
   result: ResolveResult;
   config: BootstrapConfig;
   userId?: string; // Firebase UID for server-persisted stats (totalExp, etc.)
-  controlsRef: React.MutableRefObject<{ replay: () => void; getManaCount: () => number } | null>;
+  controlsRef: React.MutableRefObject<{ replay: () => void; getManaCount: () => number; setManaCount: (n: number) => void } | null>;
   // Live damage-number config. A stable ref (never in the effect deps) so the
   // panel can retune numbers mid-battle without tearing down the Pixi app.
   dmgCfgRef: React.MutableRefObject<DamageCfg>;
@@ -1201,6 +1201,8 @@ function BattleStage({
       async function doDeath(su: SpriteUnit, myId: number) {
         su.dead = true;
         su.hpFill.visible = false;
+        su.barBg.visible = false;
+        su.accent.visible = false;
         const death = su.hasArt ? clipForRole(su.characterId, "death") : [];
         if (death.length) {
           await playOnce(su, "death", DEATH_MS / 1000);
@@ -1381,6 +1383,8 @@ function BattleStage({
           su.facing = su.team === "enemy" ? -1 : 1; // team default: enemy left, player right
           su.body.scale.x = su.absScale * su.facing; // facing on the BODY, not the node
           su.hpFill.visible = true;
+          su.barBg.visible = true;
+          su.accent.visible = true;
           const hpRatio = Math.max(0.0001, Math.min(1, su.hp / su.maxHp));
           su.hpFill.scale.x = hpRatio;
           su.hpFill.tint = hpColor(hpRatio);
@@ -1458,6 +1462,14 @@ function BattleStage({
           runReplay().catch(console.error);
         },
         getManaCount: () => ctx!.manaCount ?? 0,
+        setManaCount: (n: number) => {
+          ctx!.manaCount = Math.max(0, Math.min(10, n));
+          if (manaCountText) manaCountText.text = `${ctx!.manaCount}/10`;
+          // Also update the mana tank frame
+          const MANA_FRAMES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 107];
+          const idx = Math.min(ctx!.manaCount - 1, MANA_FRAMES.length - 1);
+          if (ctx!.manaTank) ctx!.manaTank.currentFrame = Math.min(107, idx >= 0 ? MANA_FRAMES[idx] : 0);
+        },
       };
       onReady();
       runReplay().catch(console.error);

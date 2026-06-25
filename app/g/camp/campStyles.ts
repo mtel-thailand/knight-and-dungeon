@@ -279,6 +279,14 @@ export const CAMP_PAGE_CSS = `
   justify-content: center;
   gap: clamp(8px, 2vw, 16px);
 }
+.camp-reroll-row { text-align: center; margin-top: 16px; }
+.camp-reroll-btn {
+  padding: 8px 18px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.06); color: #c8d6e5; font-size: 13px; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.camp-reroll-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); border-color: #3b82f6; }
+.camp-reroll-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .camp-reward-card {
   width: 100%; aspect-ratio: 2 / 3;
   display: flex; flex-direction: column; align-items: center; justify-content: center;

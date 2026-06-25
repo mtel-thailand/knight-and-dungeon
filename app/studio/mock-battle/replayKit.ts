@@ -102,7 +102,7 @@ function useReplayRefs(config: {
   mapCfgRef.current = config.mapConfig ?? DEFAULT_MAP;
   spellTextCfgRef.current = config.spellTextConfig ?? DEFAULT_SPELL_TEXT_CONFIG;
   const showGridRef = useRef(false);
-  const controlsRef = useRef<{ replay: () => void; getManaCount: () => number } | null>(null);
+  const controlsRef = useRef<{ replay: () => void; getManaCount: () => number; setManaCount: (n: number) => void } | null>(null);
   // OUT mutators: inert no-ops for non-studio callers (camp never needs to
   // live-retune HP bars / board / grid from outside the Pixi effect).
   const redrawHealthBarsRef = useRef<() => void>(() => {});
