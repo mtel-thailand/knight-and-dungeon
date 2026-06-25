@@ -360,6 +360,24 @@ export function checkBattleEnd(battle: BattleState): void {
   }
 }
 
+// ---- EXP computation ----
+
+// Compute EXP gains from battle events: each kill awards EXP to the killer.
+// Formula: EXP = defeated unit's maxHp (simple — will be refined).
+// Extracted as a dedicated function so the formula is easy to update.
+export function computeExpGains(battle: BattleState): Record<string, number> {
+  const unitMaxHp = new Map<string, number>();
+  for (const u of battle.units) unitMaxHp.set(u.id, u.maxHp);
+  const expGains: Record<string, number> = {};
+  for (const ev of battle.events) {
+    if (ev.kind === "death" && ev.killedBy) {
+      const exp = unitMaxHp.get(ev.unitId) ?? 0;
+      expGains[ev.killedBy] = (expGains[ev.killedBy] ?? 0) + exp;
+    }
+  }
+  return expGains;
+}
+
 // ---- Battle loop ----
 
 // Advance the battle by `dt` seconds. Each living unit decays cooldowns, fills its
@@ -455,17 +473,7 @@ export function resolveBattle(req: ResolveRequest): ResolveResult {
   // determinism (a field-absent request still produces byte-identical events).
   const finalState = snapshotInitial(battle);
 
-  // Compute EXP gains: each kill awards EXP equal to the defeated unit's maxHp.
-  const unitMaxHp = new Map<string, number>();
-  for (const u of battle.units) unitMaxHp.set(u.id, u.maxHp);
-  const expGains: Record<string, number> = {};
-  for (const ev of battle.events) {
-    if (ev.kind === "death" && ev.killedBy) {
-      const exp = unitMaxHp.get(ev.unitId) ?? 0;
-      expGains[ev.killedBy] = (expGains[ev.killedBy] ?? 0) + exp;
-    }
-  }
-
+  const expGains = computeExpGains(battle);
   return {
     result: battle.status as "win" | "lose" | "draw",
     initialState,
