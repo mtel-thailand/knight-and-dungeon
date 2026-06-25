@@ -253,8 +253,8 @@ function BattleStage({
   // Effect 1: create Pixi once, load UI spritesheets, return cleanup = destroy on unmount.
   // Effect 2: load battle-specific data & replay on every result/config change.
   const pixiCtx = useRef<{
-    app: any;
-    wrapper: HTMLDivElement;
+    gameplayApp: any;
+    uiApp: any;
     manaTank: any;
     manaCountText: any;
     manaLevel: number; // current gauge frame
@@ -265,12 +265,12 @@ function BattleStage({
   } | null>(null);
   const [pixiReady, setPixiReady] = useState(false);
 
-  // Effect 1 — Pixi + UI (runs once)
+  // Effect 1 — Pixi + UI (runs once, creates two apps: gameplay + UI overlay)
   useEffect(() => {
     const container = containerRef.current!;
     let destroyed = false;
-    let pixiApp: any = null;
-    let wrapper: HTMLDivElement | null = null;
+    let gameplayApp: any = null;
+    let uiApp: any = null;
     let pauseRaf = 0;
     const cleanups: Array<() => void> = [];
 
@@ -279,29 +279,47 @@ function BattleStage({
       const { Application, Assets, AnimatedSprite, Spritesheet, Text } = pixi as any;
       if (destroyed) return;
 
-      wrapper = document.createElement("div");
-      wrapper.style.cssText = "position:absolute; inset:0;";
-      container.appendChild(wrapper);
+      // Gameplay wrapper (bottom layer)
+      const gWrapper = document.createElement("div");
+      gWrapper.style.cssText = "position:absolute; inset:0;";
+      container.appendChild(gWrapper);
+
+      // UI wrapper (top layer — mana gauge, HUD)
+      const uWrapper = document.createElement("div");
+      uWrapper.style.cssText = "position:absolute; inset:0; pointer-events:none; z-index:10;";
+      container.appendChild(uWrapper);
 
       const MAX_RENDER_SCALE = 2;
-      pixiApp = new Application();
-      await pixiApp.init({
-        resizeTo: wrapper,
+      gameplayApp = new Application();
+      await gameplayApp.init({
+        resizeTo: gWrapper,
         backgroundAlpha: 0,
         antialias: true,
         resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_SCALE),
         autoDensity: true,
       });
-      if (destroyed) { pixiApp.destroy(); return; }
-      wrapper.appendChild(pixiApp.canvas);
+      if (destroyed) { gameplayApp.destroy(); return; }
+      gWrapper.appendChild(gameplayApp.canvas);
 
-      // Ticker pause
+      uiApp = new Application();
+      await uiApp.init({
+        resizeTo: uWrapper,
+        backgroundAlpha: 0,
+        antialias: true,
+        resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_SCALE),
+        autoDensity: true,
+      });
+      if (destroyed) { gameplayApp.destroy(); uiApp.destroy(); return; }
+      uWrapper.appendChild(uiApp.canvas);
+
+      // Ticker pause (both apps)
       const syncPause = () => {
-        if (pixiApp?.ticker) pixiApp.ticker.speed = 0;
+        if (gameplayApp?.ticker) gameplayApp.ticker.speed = 0;
+        if (uiApp?.ticker) uiApp.ticker.speed = 0;
         if (!destroyed) pauseRaf = requestAnimationFrame(syncPause);
       };
       syncPause();
-      cleanups.push(() => { cancelAnimationFrame(pauseRaf); if (pixiApp?.ticker) pixiApp.ticker.speed = 1; });
+      cleanups.push(() => { cancelAnimationFrame(pauseRaf); if (gameplayApp?.ticker) gameplayApp.ticker.speed = 1; if (uiApp?.ticker) uiApp.ticker.speed = 1; });
 
       // ---- Load UI spritesheets FIRST (mana tank) ----
       let manaFrames: any[] | null = null;
@@ -309,7 +327,7 @@ function BattleStage({
       let crystalShardTex: any | null = null;
       try {
         const manaTexture = await Assets.load("/assets/ui/mana-tank-spritesheet.png");
-        if (destroyed) { pixiApp.destroy(); return; }
+        if (destroyed) { gameplayApp.destroy(); uiApp.destroy(); return; }
         const manaResp = await fetch("/assets/ui/mana-tank-spritesheet.json");
         const manaJson = await manaResp.json();
         const manaSheet = new Spritesheet(manaTexture, manaJson);
@@ -320,7 +338,7 @@ function BattleStage({
       } catch (err) {
         console.warn("mock-battle: mana tank sheet failed", err);
       }
-      if (destroyed) { pixiApp.destroy(); return; }
+      if (destroyed) { gameplayApp.destroy(); uiApp.destroy(); return; }
 
       // Load crystal shard texture (single image, no spritesheet)
       try {
@@ -328,7 +346,7 @@ function BattleStage({
       } catch (err) {
         console.warn("mock-battle: crystal shard load failed", err);
       }
-      if (destroyed) { pixiApp.destroy(); return; }
+      if (destroyed) { gameplayApp.destroy(); uiApp.destroy(); return; }
 
       if (manaFrames && manaFrames.length > 0) {
         manaTank = new AnimatedSprite(manaFrames);
@@ -339,14 +357,14 @@ function BattleStage({
         manaTank.loop = false;
         manaTank.currentFrame = 0;
         manaTank.stop();
-        pixiApp.stage.addChild(manaTank);
+        uiApp.stage.addChild(manaTank);
       }
 
       // Font load
       try {
         await document.fonts.load(`400 32px ${dmgFont.style.fontFamily}`);
       } catch { /* fallback */ }
-      if (destroyed) { pixiApp.destroy(); return; }
+      if (destroyed) { gameplayApp.destroy(); uiApp.destroy(); return; }
 
       // Mana count text (right of gauge)
       let manaCountText: any = null;
@@ -360,11 +378,11 @@ function BattleStage({
         manaCountText.anchor.set(0, 0.5);
         manaCountText.position.set(85, 65);
         manaCountText.zIndex = 9999;
-        pixiApp.stage.addChild(manaCountText);
+        uiApp.stage.addChild(manaCountText);
       }
 
       // Store in ref for Effect 2
-      pixiCtx.current = { app: pixiApp, wrapper, manaTank, manaCountText, manaLevel: 0, manaCount: 0, crystalShardTex, pixi };
+      pixiCtx.current = { gameplayApp, uiApp, manaTank, manaCountText, manaLevel: 0, manaCount: 0, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -374,9 +392,8 @@ function BattleStage({
       destroyed = true;
       cancelAnimationFrame(pauseRaf);
       for (const c of cleanups) c();
-      if (pixiApp) {
-        try { pixiApp.destroy(); } catch { /* ignore */ }
-      }
+      if (gameplayApp) { try { gameplayApp.destroy(); } catch { /* ignore */ } }
+      if (uiApp) { try { uiApp.destroy(); } catch { /* ignore */ } }
       pixiCtx.current = null;
       container.innerHTML = "";
     };
@@ -387,7 +404,7 @@ function BattleStage({
     const ctx = pixiCtx.current;
     if (!ctx || !result) return;
 
-    const { app: pixiApp, wrapper } = ctx;
+    const pixiApp = ctx!.gameplayApp;
     const container = containerRef.current!;
     let destroyed = false;
     let genId = 0;
