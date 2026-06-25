@@ -1198,6 +1198,8 @@ function BattleStage({
           manaTank.tint = 0xffff88;
           await wait(80);
           manaTank.tint = 0xffffff;
+          // Advance mana gauge: 10 crystals fill from empty (frame 0) to full (frame 96)
+          manaTank.currentFrame = Math.min(96, (manaTank.currentFrame ?? 0) + 10);
         }
         shard.destroy();
       }
@@ -1336,7 +1338,6 @@ function BattleStage({
       async function runReplay() {
         const myId = ++genId; // cancels any in-flight replay
         resetAll();
-        if (manaTank) manaTank.play();
         await wait(260);
         if (destroyed || genId !== myId) return;
 
