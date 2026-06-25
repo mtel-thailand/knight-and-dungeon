@@ -333,7 +333,7 @@ function BattleStage({
       if (manaFrames && manaFrames.length > 0) {
         manaTank = new AnimatedSprite(manaFrames);
         manaTank.anchor.set(0.5);
-        manaTank.scale.set(0.5);
+        manaTank.scale.set(0.25);
         manaTank.position.set(60, 60);
         manaTank.zIndex = 9998;
         manaTank.loop = false;
@@ -358,7 +358,7 @@ function BattleStage({
           fontWeight: "bold",
         });
         manaCountText.anchor.set(0, 0.5);
-        manaCountText.position.set(110, 65);
+        manaCountText.position.set(85, 65);
         manaCountText.zIndex = 9999;
         pixiApp.stage.addChild(manaCountText);
       }
