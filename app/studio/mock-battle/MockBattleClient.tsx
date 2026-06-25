@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/app/auth/AuthGuard";
 import type {
   DamageConfig as DamageCfg,
   MapConfig,
@@ -166,7 +167,8 @@ export default function MockBattleClient() {
   const [showGrid, setShowGrid] = useState(true);
 
   const controlsRef = useRef<{ replay: () => void } | null>(null);
-  // Keep last non-null result/config so BattleStage never unmounts
+  const { user: authUser } = useAuth();
+  const userId = authUser?.uid;
   // (mana gauge and Pixi apps persist across re-fights).
   const lastResult = useRef(result);
   if (result) lastResult.current = result;
@@ -713,6 +715,7 @@ export default function MockBattleClient() {
                   <BattleStage
                     key="persist"
                     result={lastResult.current!}
+                    userId={userId}
                     config={lastConfig.current!}
                     controlsRef={controlsRef}
                     dmgCfgRef={dmgCfgRef}

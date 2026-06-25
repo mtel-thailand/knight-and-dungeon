@@ -202,6 +202,7 @@ type SpriteUnit = {
 export type StageProps = {
   result: ResolveResult;
   config: BootstrapConfig;
+  userId?: string; // Firebase UID for server-persisted stats (totalExp, etc.)
   controlsRef: React.MutableRefObject<{ replay: () => void } | null>;
   // Live damage-number config. A stable ref (never in the effect deps) so the
   // panel can retune numbers mid-battle without tearing down the Pixi app.
@@ -232,6 +233,7 @@ export type StageProps = {
 function BattleStage({
   result,
   config,
+  userId,
   controlsRef,
   dmgCfgRef,
   spellTextCfgRef,
@@ -256,9 +258,10 @@ function BattleStage({
     gameplayApp: any;
     uiApp: any;
     manaTank: any;
+    manaCountText: any;
+    expByChar: Record<string, number>; // characterId → total EXP earned
     crystalShardTex: any;
     pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any; Sprite: any };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } | null>(null);
   const [pixiReady, setPixiReady] = useState(false);
 
@@ -363,8 +366,45 @@ function BattleStage({
       } catch { /* fallback */ }
       if (destroyed) { gameplayApp.destroy(); uiApp.destroy(); return; }
 
+      // Fetch per-character EXP from server
+      let expByChar: Record<string, number> = {};
+      try {
+        if (userId) {
+          const resp = await fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`);
+          const data = await resp.json();
+          if (data.ok && Array.isArray(data.characters)) {
+            for (const c of data.characters) {
+              expByChar[c.characterId] = c.exp ?? 0;
+            }
+          }
+        }
+      } catch { /* server unavailable */ }
+      if (destroyed) { gameplayApp.destroy(); uiApp.destroy(); return; }
+
+      // Mana count text (right of gauge) — shows first character's EXP
+      const primaryChar = Object.keys(expByChar)[0] || "blue";
+      const primaryExp = expByChar[primaryChar] ?? 0;
+      let manaCountText: any = null;
+      if (manaTank) {
+        manaCountText = new Text(`EXP ${primaryExp}`, {
+          fontFamily: dmgFont.style.fontFamily,
+          fontSize: 16,
+          fill: 0x88ccff,
+          fontWeight: "bold",
+        });
+        manaCountText.anchor.set(0, 0.5);
+        manaCountText.position.set(85, 65);
+        manaCountText.zIndex = 9999;
+        uiApp.stage.addChild(manaCountText);
+        // Map EXP to mana tank frame (0 at 0 EXP, maxFrame at ~2000 EXP)
+        const totalFrames = manaFrames?.length ?? 107;
+        const maxExp = 2000;
+        const frame = Math.min(totalFrames - 1, Math.floor((primaryExp / maxExp) * totalFrames));
+        manaTank.currentFrame = Math.max(0, frame);
+      }
+
       // Store in ref for Effect 2
-      pixiCtx.current = { gameplayApp, uiApp, manaTank, crystalShardTex, pixi };
+      pixiCtx.current = { gameplayApp, uiApp, manaTank, manaCountText, expByChar, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -396,6 +436,7 @@ function BattleStage({
       const pixi = ctx!.pixi;
       const { Application: _, Assets, AnimatedSprite, Graphics, Spritesheet, Text, Container, Sprite } = pixi;
       const manaTank = ctx!.manaTank;
+      const manaCountText = ctx!.manaCountText;
       const crystalShardTex = ctx!.crystalShardTex;
 
       const catalog: any[] = config.animations ?? [];
@@ -1362,6 +1403,36 @@ function BattleStage({
           await wait(INTER_BEAT_MS);
         }
         if (destroyed || genId !== myId) return;
+        // Accumulate EXP per character from battle result
+        if (result.expGains) {
+          const entries = Object.entries(result.expGains).filter(([, v]) => v > 0);
+          if (entries.length > 0) {
+            // Extract characterId from unit IDs like "player-blue-0" → "blue"
+            for (const [unitId, exp] of entries) {
+              const parts = unitId.split("-");
+              const charId = parts.length >= 3 ? parts.slice(1, -1).join("-") : unitId;
+              ctx!.expByChar[charId] = (ctx!.expByChar[charId] ?? 0) + exp;
+            }
+            // Persist per-character EXP to server
+            if (userId) {
+              for (const [charId, exp] of Object.entries(ctx!.expByChar)) {
+                fetch("/api/user/characters", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ userId, characterId: charId, exp }),
+                }).catch(() => {});
+              }
+            }
+            // Update mana tank from primary character's EXP
+            const primaryChar = Object.keys(ctx!.expByChar)[0] || "blue";
+            const primaryExp = ctx!.expByChar[primaryChar] ?? 0;
+            const totalFrames = ctx!.manaTank?._textures?.length ?? 107;
+            const maxExp = 2000;
+            const frame = Math.min(totalFrames - 1, Math.floor((primaryExp / maxExp) * totalFrames));
+            if (ctx!.manaTank) ctx!.manaTank.currentFrame = Math.max(0, frame);
+            if (manaCountText) manaCountText.text = `EXP ${primaryExp}`;
+          }
+        }
         onEnd(result.result);
       }
 
