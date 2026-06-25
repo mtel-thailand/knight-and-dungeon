@@ -1190,6 +1190,18 @@ function BattleStage({
       // ---- Crystal shard: drop from dying enemy, fly to mana gauge ----
       async function spawnCrystalShard(x: number, y: number, myId: number) {
         if (!crystalShardTex) return;
+        // Advance mana gauge IMMEDIATELY on enemy death, before any async.
+        // This ensures the last kill counts even if the battle ends mid-flight.
+        playSound("audio/crystal-absorb.wav", 2);
+        if (manaTank) {
+          const MANA_FRAMES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 107];
+          ctx!.manaCount = Math.min(10, (ctx!.manaCount ?? 0) + 1);
+          const idx = Math.min(ctx!.manaCount - 1, MANA_FRAMES.length - 1);
+          manaTank.currentFrame = Math.min(107, MANA_FRAMES[idx]);
+          ctx!.manaLevel = manaTank.currentFrame;
+          if (manaCountText) manaCountText.text = `${ctx!.manaCount}/10`;
+        }
+
         const shard = new Sprite(crystalShardTex);
         shard.anchor.set(0.5);
         shard.position.set(x, y);
@@ -1218,17 +1230,6 @@ function BattleStage({
         await tween(500, (p) => {
           shard.alpha = 1 - easeOutCubic(p);
         }, myId);
-        // Sound + advance mana gauge on absorption
-        playSound("audio/crystal-absorb.wav", 2);
-        if (manaTank) {
-          // Snap to specific frames per crystal (user-defined: 0,33,37,41,52,63,74,85,96,107)
-          const MANA_FRAMES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 107];
-          ctx!.manaCount = Math.min(10, (ctx!.manaCount ?? 0) + 1);
-          const idx = Math.min(ctx!.manaCount - 1, MANA_FRAMES.length - 1);
-          manaTank.currentFrame = Math.min(107, MANA_FRAMES[idx]);
-          ctx!.manaLevel = manaTank.currentFrame;
-          if (manaCountText) manaCountText.text = `${ctx!.manaCount}/10`;
-        }
         shard.destroy();
       }
 
