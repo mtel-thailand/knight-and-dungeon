@@ -687,6 +687,7 @@ function BattleStage({
         manaTank.position.set(60, 60);
         manaTank.zIndex = 9998;
         manaTank.loop = false;
+        manaTank.currentFrame = 0;
         manaTank.stop();
         pixiApp.stage.addChild(manaTank);
       }
