@@ -29,7 +29,7 @@ event log on a PixiJS isometric [5,6,7,6,5] board, and is the party-builder UI.
 - **Spell projectile:** `flyProjectile` (caster hex→target hex straight line); HP/number/flash
   fire AFTER flight (impact), not at cast. Visual config from `SpellDef` (fps/scaleX/scaleY/duration/…).
 - Board = `result.initialState.hexes` (29 cells); `centerBoard` fits any hex set.
-- **One `next dev` only** (two = separate SQLite WAL connections = inconsistent reads).
+- **One `next dev` only** (two instances = separate Drizzle pool connections = inconsistent reads).
 
 ## Don't touch
 - Don't import the engine; the only engine contact is the resolve HTTP route + the contract types.

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { upsertBattleReward, deleteBattleReward } from "../db";
+import { upsertBattleReward, deleteBattleReward } from "@/lib/db";
 import type { BattleRewardDef, BattleRewardEffect, BattleRewardRarity } from "@/lib/battle/types";
 
 export const runtime = "nodejs";
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     typeof reward.effectValue === "number" && Number.isFinite(reward.effectValue)
       ? Math.max(1, Math.min(10000, Math.floor(reward.effectValue)))
       : 10;
-  upsertBattleReward({
+  await upsertBattleReward({
     id: reward.id,
     name: reward.name,
     description: typeof reward.description === "string" ? reward.description : "",
@@ -68,6 +68,6 @@ export async function DELETE(req: NextRequest) {
       { status: 400 },
     );
   }
-  deleteBattleReward(id);
+  await deleteBattleReward(id);
   return NextResponse.json({ ok: true });
 }

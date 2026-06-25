@@ -4,7 +4,7 @@ MP4 → spritesheet authoring and local-dev conversion. This module bridges the 
 CLI pipeline and the Next.js upload routes that register new animations.
 
 ## Key files / entry points
-- `add_animation.py` — MP4 → PNG+JSON → SQLite catalog row; live use is `--assets-dir ./public/assets --no-inject`.
+- `add_animation.py` — MP4 → spritesheet PNG; registers via `POST /api/animation`.
 - `make_spritesheet.py` — bare spritesheet PNG generator.
 - `app/api/animation/route.ts` — multipart upload route; shells `python3 add_animation.py`, writes `public/assets`, upserts the animation and character kit.
 - `app/api/spell/animation/route.ts` — local-dev spell conversion route; shells `ffprobe`/`ffmpeg`, writes `public/assets`, then `upsertAnimation`.

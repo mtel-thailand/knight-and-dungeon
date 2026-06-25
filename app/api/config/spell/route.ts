@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { upsertSpell, deleteSpell } from "../db";
+import { upsertSpell, deleteSpell } from "@/lib/db";
 import type { SpellDef } from "@/lib/battle/types";
 
 export const runtime = "nodejs";
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   // ON CONFLICT replace of fps/scaleX/scaleY/loop/duration/offsets/rotation, so
   // omitting any here NULLs out that saved field on every save — which silently
   // dropped the whole playback config (the "save doesn't persist" bug).
-  upsertSpell({
+  await upsertSpell({
     id: spell.id,
     name: spell.name,
     animationKey: typeof spell.animationKey === "string" ? spell.animationKey : null,
@@ -80,6 +80,6 @@ export async function DELETE(req: NextRequest) {
       { status: 400 },
     );
   }
-  deleteSpell(id);
+  await deleteSpell(id);
   return NextResponse.json({ ok: true });
 }

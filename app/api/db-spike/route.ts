@@ -4,28 +4,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/db-spike — Postgres migration probe.
- *
- * When DB_BACKEND=postgres, writes a timestamp to app_config via the new
- * lib/db/postgres pool, reads it back, and returns the round-tripped value.
- * Otherwise returns a no-op SQLite skip indicator.
+ * GET /api/db-spike — DB connectivity probe.
+ * Writes a timestamp to app_config and reads it back.
  */
 export async function GET() {
-  if (process.env.DB_BACKEND !== "postgres") {
-    return NextResponse.json({ backend: "sqlite", skipped: true });
-  }
-
   try {
-    const { readUserState: readConfig } = await import("@/lib/db");
-    // Use postgres-adapter directly for the upsert (lib/db/index is read-only).
-    const { setAppConfig } = await import("@/lib/db/postgres-adapter");
+    const { readUserState, writeUserState } = await import("@/lib/db");
 
     const probe = { probe: Date.now(), ts: new Date().toISOString() };
-    await setAppConfig(probe);
-    const readback = await readConfig();
+    await writeUserState(probe);
+    const readback = await readUserState();
 
     return NextResponse.json({
-      backend: "postgres",
       ok: true,
       roundTrip: readback,
     });

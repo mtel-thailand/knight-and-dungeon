@@ -12,11 +12,13 @@
 *.tsbuildinfo
 next-env.d.ts
 
-# local SQLite database (runtime artifact; schema lives in app/api/config/db.ts,
-# battle rows are reseedable via data/seed-battle.ts)
+# local SQLite database (legacy — no longer used)
 /data/app.db
 /data/app.db-shm
 /data/app.db-wal
+
+# production env (never commit — contains DB credentials)
+.env.prod
 
 # misc
 .DS_Store

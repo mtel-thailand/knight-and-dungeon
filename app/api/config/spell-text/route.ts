@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveSpellTextConfig } from "../db";
+import { saveSpellTextConfig } from "@/lib/db";
 import { DEFAULT_SPELL_TEXT_CONFIG, SPELL_TEXT_BOUNDS } from "@/lib/battle/types";
 import type { SpellTextConfig } from "@/lib/battle/types";
 
@@ -36,6 +36,6 @@ export async function POST(req: NextRequest) {
         ? clamp(value, min, max)
         : DEFAULT_SPELL_TEXT_CONFIG[key];
   }
-  saveSpellTextConfig(cfg);
+  await saveSpellTextConfig(cfg);
   return NextResponse.json({ ok: true });
 }

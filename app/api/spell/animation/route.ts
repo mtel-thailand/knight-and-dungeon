@@ -4,7 +4,7 @@ import { promisify } from "util";
 import os from "os";
 import fs from "fs";
 import path from "path";
-import { upsertAnimation } from "../../config/db";
+import { upsertAnimation } from "@/lib/db";
 import { uploadAsset } from "@/lib/firebase";
 
 export const runtime = "nodejs";
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
         fbErr instanceof Error ? fbErr.message : String(fbErr),
       );
     }
-    upsertAnimation({ key, label, image: imageUrl, frameData: pixiJson });
+    await upsertAnimation({ key, label, image: imageUrl, frameData: pixiJson });
 
     await fs.promises.unlink(tmp).catch(() => {});
     return NextResponse.json({ ok: true, key, label, frames: nbFrames });

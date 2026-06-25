@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  writeUserState,
-  deleteCharacter,
-} from "./db";
-import {
   readUserState,
   listAnimations,
   getCharacterSeed,
@@ -17,6 +13,8 @@ import {
   getRoster,
   listCampaigns,
   listBattleRewards,
+  writeUserState,
+  deleteCharacter,
 } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -98,7 +96,7 @@ export async function POST(req: NextRequest) {
   delete userState.campaigns;
   delete userState.battleRewards;
   delete userState.roster;
-  writeUserState(userState);
+  await writeUserState(userState);
   return NextResponse.json({ ok: true });
 }
 
@@ -110,6 +108,6 @@ export async function DELETE(req: NextRequest) {
       { status: 400 },
     );
   }
-  deleteCharacter(id);
+  await deleteCharacter(id);
   return NextResponse.json({ ok: true });
 }

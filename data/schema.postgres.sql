@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS damage_config (
     data TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS spell_text_config (
+    id   INTEGER PRIMARY KEY CHECK (id = 1),
+    data TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS spells (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,

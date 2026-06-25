@@ -10,7 +10,7 @@ and skill ownership.
 - **Engine spec:** `~/Downloads/README_AFK_Hex_Battle_Knight_MVP_v3.md` (build-ready; the engine
   is generalized from it to party-vs-party).
 - **Frozen contract:** `lib/battle/types.ts` — import from here; do **not** redefine these shapes.
-- **Recon facts (verified):** persistence is **SQLite** `data/app.db` via `app/api/config/db.ts`
+- **Recon facts (verified):** persistence is **Postgres** via Drizzle ORM (`lib/db/adapter.ts`)
   (NOT json/fs); live roster = `knight` (idle=`ready`, move=`run`, attack kit) + `john`
   (attack-only, `john-sword-swing`); `skeleton-soldier` PNGs on disk, not in DB; **no hit/death
   art** for anyone; **no combat stats** exist; `db.ts` has unused

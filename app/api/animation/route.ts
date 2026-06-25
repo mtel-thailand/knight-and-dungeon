@@ -3,7 +3,7 @@ import { spawn } from "child_process";
 import { mkdtemp, writeFile, rm, readFile } from "fs/promises";
 import os from "os";
 import path from "path";
-import { listAnimations, getCharacterSeed, readUserState, updateAnimationImage } from "../config/db";
+import { listAnimations, getCharacterSeed, readUserState, updateAnimationImage } from "@/lib/db";
 import { uploadAsset } from "@/lib/firebase";
 
 export const runtime = "nodejs";
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
 
   // Reject unknown characters so a stray id can't seed a phantom character
   // (getCharacterSeed would otherwise promote a seed-only id into the roster).
-  const roster = readUserState<{ characters?: Array<{ id: string }> }>()
+  const roster = (await readUserState<{ characters?: Array<{ id: string }> }>())
     ?.characters;
   if (roster && !roster.some((c) => c.id === character)) {
     return NextResponse.json(
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       const pngBuf = await readFile(localPng);
       const destPath = `spritesheets/${key}-spritesheet.png`;
       const url = await uploadAsset(pngBuf, destPath);
-      updateAnimationImage(key, url);
+      await updateAnimationImage(key, url);
       console.log(`[firebase] uploaded ${destPath} → ${url}`);
     } catch (fbErr) {
       console.warn(
@@ -146,8 +146,8 @@ export async function POST(req: NextRequest) {
   // so the client can hot-load the new frames without a full page reload. Same
   // cached DB connection the studio's GET uses; the python pipeline has already
   // committed and exited, so WAL makes its rows visible here.
-  const animation = listAnimations().find((a) => a.key === key) ?? null;
-  const seed = getCharacterSeed()[character]?.animations?.[key] ?? null;
+  const animation = (await listAnimations()).find((a) => a.key === key) ?? null;
+  const seed = (await getCharacterSeed())[character]?.animations?.[key] ?? null;
   return NextResponse.json({ ok: true, key, animation, seed });
 }
 

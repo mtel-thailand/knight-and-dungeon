@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRoster, setRoster } from "../db";
+import { getRoster, setRoster } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 // validation) and surfaces it via GET /api/config (roster). Mirrors the
 // single-row blob writer style of POST /api/config/damage.
 export async function GET() {
-  return NextResponse.json({ roster: getRoster() });
+  return NextResponse.json({ roster: await getRoster() });
 }
 
 export async function POST(req: NextRequest) {
@@ -28,9 +28,8 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  // Store the client-owned blob verbatim. `?? null` guards the absent-key case
-  // (better-sqlite3 rejects an `undefined` bind; the NOT NULL column needs a value).
+  // Store the client-owned blob verbatim. `?? null` guards the absent-key case.
   const { roster } = body as { roster?: unknown };
-  setRoster(roster ?? null);
+  await setRoster(roster ?? null);
   return NextResponse.json({ ok: true });
 }

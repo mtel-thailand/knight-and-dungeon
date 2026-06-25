@@ -3,7 +3,7 @@ import {
   upsertCampaign,
   deleteCampaign,
   setActiveCampaign,
-} from "../db";
+} from "@/lib/db";
 import { CAMPAIGN_BOUNDS } from "@/lib/battle/types";
 
 export const runtime = "nodejs";
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   // Activation toggle — distinct from campaign upsert.
   if (b.activeId !== undefined) {
-    setActiveCampaign(
+    await setActiveCampaign(
       b.activeId === null ? null : String(b.activeId),
     );
     return NextResponse.json({ ok: true });
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       )
     : [];
 
-  upsertCampaign({
+  await upsertCampaign({
     id: campaign.id,
     name: campaign.name,
     waveCount,
@@ -89,6 +89,6 @@ export async function DELETE(req: NextRequest) {
       { status: 400 },
     );
   }
-  deleteCampaign(id);
+  await deleteCampaign(id);
   return NextResponse.json({ ok: true });
 }

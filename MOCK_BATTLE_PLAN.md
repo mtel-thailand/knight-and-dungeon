@@ -17,7 +17,7 @@ parallel-development waves. No implementation here.
 - **Backend:** a **pure** sim module (`lib/battle/`, no React/Pixi/DB/`next` imports) invoked by a
   **DB-free** resolve route. Stats arrive in the request payload (sandbox-acceptable; **clamped** —
   see C2). For a future ladder/economy, switch to client-sends-`characterId`+`hex`, server looks up.
-- **Stats:** per-character, in a new SQLite `character_battle_stats` table.
+- **Stats:** per-character, in the `character_battle_stats` table.
 - **Roster / first matchup:** **John vs John** (the only registered, fully-animated character — see
   Reality). Both parties instantiate `john`; the **enemy party is tinted + flipped** to read as the
   opponent. Other characters (e.g. re-registering `knight`) are a follow-up.
@@ -29,9 +29,9 @@ parallel-development waves. No implementation here.
   see B3/E5); CMS adds stats + event-role mapping + skill assignment on top of the **existing**
   animation/action editor.
 
-## Reality notes (verified against live `data/app.db`; AGENTS.md is stale)
+## Reality notes
 
-- Live data is **SQLite** (`data/app.db`) via `app/api/config/db.ts`; tables `app_config` (JSON blob),
+- Live data is **Postgres** via Drizzle ORM (`lib/db/adapter.ts`); tables defined in `lib/db/schema.ts`
   `animations`, `character_animations`. No `actions` table — Actions live in the `app_config` blob,
   per-character. Root `character-configs.json` is **dead**.
 - **Roster (re-checked — it changed):** **`john` is the only registered character**

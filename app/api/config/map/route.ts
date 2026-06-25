@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveMapConfig } from "../db";
+import { saveMapConfig } from "@/lib/db";
 import type { MapConfig } from "@/lib/battle/types";
 
 export const runtime = "nodejs";
@@ -59,6 +59,6 @@ export async function POST(req: NextRequest) {
     }
     cfg[field] = clamp(value, MAP_BOUNDS[field].min, MAP_BOUNDS[field].max);
   }
-  saveMapConfig(cfg);
+  await saveMapConfig(cfg);
   return NextResponse.json({ ok: true });
 }

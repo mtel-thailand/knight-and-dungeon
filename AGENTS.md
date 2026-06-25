@@ -13,13 +13,13 @@ The codebase is organized into 7 modules; each has its own `AGENTS.md` auto-surf
 |---|---|---|---|
 | A contract | frozen sim/CMS types, board shape, bounds, `/api/config` payload shape | `lib/battle/AGENTS.md` | oracle (gatekeeper) |
 | B battle-engine | pure deterministic sim + resolve HTTP adapter | `lib/battle/AGENTS.md`, `app/api/battle/AGENTS.md` | fixer (oracle-reviewed) |
-| C persistence | SQLite schema/migrations + config API aggregator & writers | `app/api/config/AGENTS.md` | fixer |
+| C persistence | Postgres schema (Drizzle ORM) + config API aggregator & writers | `app/api/config/AGENTS.md` | fixer |
 | D asset-pipeline | MP4→spritesheet (Python CLI + server routes) | `app/api/animation/AGENTS.md` | fixer |
 | E studio-cms | imperative-DOM character/anim/action/battle-data CMS + preview | `app/studio/AGENTS.md` | fixer (senior FE) |
 | F spell-cms | global spell library (React pages) | `app/studio/spells/AGENTS.md` | fixer |
 | G mock-battle | Pixi replayer + party builder + game-screen shell | `app/studio/mock-battle/AGENTS.md` | fixer (Pixi) |
 
-Cross-cutting invariants: the determinism firewall stays in `lib/battle`; the shared `[5,6,7,6,5]` board lives in `studioHelpers` + `BOARD`; SQLite/WAL runs with one `next dev`; `/api/config` POST strip-list must track GET; the studio stays imperative DOM with injected `<style>`; `BootstrapPayload` is a client mirror and can drift.
+Cross-cutting invariants: the determinism firewall stays in `lib/battle`; the shared `[5,6,7,6,5]` board lives in `studioHelpers` + `BOARD`; Fully async Postgres via Drizzle ORM; runs with one `next dev`; `/api/config` POST strip-list must track GET; the studio stays imperative DOM with injected `<style>`; `BootstrapPayload` is a client mirror and can drift.
 Deep-dive battle docs live with module G (`MOCK_BATTLE.md`, `MOCK_BATTLE_PLAN.md`, `MOCK_BATTLE_TASKS.md`); the root stays the single index.
 
 ## Commands
@@ -32,31 +32,14 @@ Deep-dive battle docs live with module G (`MOCK_BATTLE.md`, `MOCK_BATTLE_PLAN.md
   `animations[].config` errors.) Keep it clean and don't regress.
 - Python pipeline needs **`ffmpeg` + `ffprobe` on PATH**. Next 15 needs Node 18.18+.
 
-## ⚠️ This doc was stale — corrected facts (verified by recon)
+## Persistence — Postgres via Drizzle ORM
 
-Older versions described JSON/`fs` persistence, `data/user-config.json`, a hardcoded
-`Assets.load([...])` alias list, `public/character-configs.json`, and a
-`3d-knight`/`sliceSheetFrames` special case. **None of those are true anymore.** Accurate picture below.
-
-## Persistence — SQLite, not JSON/localStorage
-
-The live studio persists state through `GET/POST /api/config` (`app/api/config/route.ts`), which
-delegates to **`app/api/config/db.ts`** — a **`better-sqlite3`** database at `data/app.db`
-(connection cached on `globalThis`, WAL, `CREATE TABLE IF NOT EXISTS`). Three **core** tables (the
-*Mock-Battle feature* adds three more — `character_battle_stats`, `character_event_roles`, `battle_map_config`):
-
-- **`app_config`** — the user-state blob: character list + active character, per-character
-  per-animation config (`{duration,loop}`, widened client-side to `{duration,loop,alpha,rotation}`),
-  `actions`, and per-character transform (scaleX/Y, anchorX/Y, tint).
-- **`animations`** — the animation **catalog**; each row `{ key, label, image, frameData, deriveFrom, reverse }`.
-- **`character_animations`** — which animation keys belong to each character.
-
-`GET /api/config` returns user state + the catalog + a `characterSeed` reconstructed at runtime by
-`getCharacterSeed()` (db.ts). There is **no** `public/character-configs.json`; the root
-`character-configs.json` is dead legacy — ignore it. `db.ts` has `upsertAnimation` /
-`upsertCharacterAnimation` write helpers that are currently **unused** for the catalog (the animation
-catalog was populated out-of-band — there is no *animation* seeder). The **battle** tables are seeded by
-`data/seed-battle.ts`.
+The live studio persists state through `GET/POST /api/config`, which
+delegates to **`lib/db/adapter.ts`** — a Drizzle ORM adapter querying a Postgres
+database (`DATABASE_URL` env var). Fourteen tables are defined in `lib/db/schema.ts`:
+app_config, animations, character_animations, character_battle_stats,
+character_event_roles, battle_map_config, damage_config, spell_text_config,
+spells, campaigns, character_spells, mock_battle_roster, battle_rewards.
 
 Caution: any studio interaction POSTs the whole in-memory state back, overwriting manual edits to
 `app_config`.
@@ -102,7 +85,7 @@ Pixi out of module/server scope; the runtime values still come from `await impor
 
 - `pixi.js` is loaded with `await import('pixi.js')` inside the effect (client-only; keep Pixi out of
   module-level / server scope).
-- The catalog is fetched from `GET /api/config` (SQLite) — there is **no** hardcoded
+- The catalog is fetched from `GET /api/config` (Postgres) — there is **no** hardcoded
   `Assets.load([...])` alias list anymore.
 - The many `if (destroyed) { ... }` guards exist because `init()` is async and React Strict Mode
   double-invokes effects in dev; cleanup destroys the Pixi app, removes the style tag + resize
@@ -151,7 +134,7 @@ configurable isometric hexagon board. **Full architecture doc: `MOCK_BATTLE.md`.
   synthesis). `john` has real `hit`/`death` art so it needs no synthesis.
 - **CMS:** a "Battle Data" panel in `StudioClient.tsx` edits stats, event-role→Action/Animation maps,
   and skills; `/studio` has a **Mock Battle** nav link.
-- **Dev gotchas:** run **exactly one** `next dev` (two instances = separate SQLite connections =
+- **Dev gotchas:** run **exactly one** `next dev` (two instances = separate connections =
   inconsistent reads); never `npm run build` against a running dev (shared `.next/` corrupts → 500s).
 
 ## Adding an animation (MP4 → studio)
@@ -164,7 +147,7 @@ Source MP4s live in `source/`. `python3 make_spritesheet.py` (bare PNG) and
 `--main-js ./main.js`) and its `main.js` injection won't match the live app. To add to the live studio:
 
 1. `python3 add_animation.py source/<clip>.mp4 <name> --assets-dir ./public/assets --no-inject`
-2. Register the animation in the **SQLite catalog** (`animations` + `character_animations` via
+2. Register the animation in the **Postgres catalog** (`animations` + `character_animations` via
    `db.ts` — no seeder exists, so insert directly or write one). The old "edit the `Assets.load`
    list / `animations` array in `StudioClient.tsx`" step **no longer applies**.
 
@@ -179,6 +162,4 @@ and Next serves only what the app imports + `public/`, so these root files are *
 built**. `main.js` is stale (no John, no actions/transforms).
 
 ## Not under version control
-
-This is not a git repo. `.next/`, `node_modules/`, `tsconfig.tsbuildinfo`, and `data/app.db` (the
-SQLite database) are local artifacts.
+`.next/`, `node_modules/`, `tsconfig.tsbuildinfo`

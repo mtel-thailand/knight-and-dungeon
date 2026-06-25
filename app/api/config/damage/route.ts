@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { saveDamageConfig } from "../db";
+import { saveDamageConfig } from "@/lib/db";
 import { DEFAULT_DAMAGE_CONFIG, DAMAGE_BOUNDS } from "@/lib/battle/types";
 import type { DamageConfig } from "@/lib/battle/types";
 
@@ -41,6 +41,6 @@ export async function POST(req: NextRequest) {
         ? clamp(value, min, max)
         : DEFAULT_DAMAGE_CONFIG[key];
   }
-  saveDamageConfig(cfg);
+  await saveDamageConfig(cfg);
   return NextResponse.json({ ok: true });
 }

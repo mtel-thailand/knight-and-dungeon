@@ -32,7 +32,7 @@ Map overlay controls     ──POST /api/config/map───────▶  bat
 
 - **Backend is the source of truth.** The engine is pure (no React/Pixi/DB/`next`, no
   `Date`/`Math.random`) and deterministic; the client only renders.
-- **Persistence** is SQLite (`data/app.db`) via `app/api/config/db.ts`.
+- **Persistence** is Postgres via Drizzle ORM (`lib/db/adapter.ts`).
 - **The client never computes outcomes** — it sends intent (parties + stats + deploy hexes) and
   replays the returned events.
 
@@ -114,7 +114,7 @@ ids, total tie-breaks, integer floored damage, and no `Date`/`Math.random`. `lib
 
 ---
 
-## Database — `app/api/config/db.ts` (better-sqlite3, `data/app.db`)
+## Database — Drizzle ORM + Postgres
 
 `createDb()` ensures **six tables** (`CREATE TABLE IF NOT EXISTS`):
 `app_config` (user-state blob), `animations` (catalog), `character_animations` (per-char keys),
@@ -230,7 +230,7 @@ All three "Save" buttons `POST /api/config/battle`. (`/studio` also has a **Mock
   `Date`/`Math.random`, no React/Pixi/DB/`next` imports); if randomness is ever added, use a seeded
   RNG stored in `BattleState` and return the seed.
 - **Run exactly one dev server.** Two `next dev` instances (e.g. `:3000` + `:3001`) use **separate
-  better-sqlite3 connections** → inconsistent reads/writes (this caused phantom "save doesn't work"
-  bugs). If a stray one appears: `lsof -ti tcp:3000 | xargs kill -9`, then a single `npm run dev`.
+  Drizzle ORM connections** → inconsistent reads/writes (this caused phantom "save doesn't work"
+  issues; resolved by using the Drizzle adapter with a pooled connection).
 - **Do not run `npm run build` against a running `next dev`** — they share `.next/`, which corrupts
   it (500s / stale bundles). Build only with dev stopped, or use a separate checkout.

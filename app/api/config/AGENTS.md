@@ -1,7 +1,7 @@
-# persistence (SQLite + config API)
+# persistence (Postgres + Drizzle ORM + config API)
 
 Single source of truth for studio state, battle CMS data, spell catalog state, and
-the mock-battle roster. This module owns the SQLite schema and `/api/config` family.
+the mock-battle roster. This module owns the Postgres schema (via Drizzle ORM) and `/api/config` family.
 
 ## Key files / entry points
 - `db.ts` — `createDb`, `readUserState`, `writeUserState`, `listAnimations`, `upsertAnimation`,
@@ -14,7 +14,7 @@ the mock-battle roster. This module owns the SQLite schema and `/api/config` fam
 - Seed source: `data/seed-battle.ts`.
 
 ## Contract consumed / exposed
-- Owns `data/app.db` via `better-sqlite3` (globalThis cache, WAL, `CREATE TABLE IF NOT EXISTS`,
+- Owns the Postgres schema via Drizzle ORM (`lib/db/schema.ts`); connection managed through `lib/db/client.ts`.
   guarded `ALTER TABLE` migrations in `createDb`).
 - `GET /api/config` returns mutable user state plus server-managed catalog/seed/battle data:
   `animations`, `characterSeed`, `battleStats`, `roleMaps`, `mapConfig`, `damageConfig`,
@@ -23,7 +23,7 @@ the mock-battle roster. This module owns the SQLite schema and `/api/config` fam
 
 ## Invariants & gotchas
 - If a GET key is server-managed, the POST strip-list in `route.ts` must be updated immediately.
-- `db.ts` is the only sanctioned SQLite access layer; do not open the DB elsewhere.
+- `lib/db/adapter.ts` is the only sanctioned DB access layer; always import from `@/lib/db`.
 - `app/api/config/battle/route.ts` writes stats, role maps, and replace-all spell ownership.
 
 ## Don't touch
