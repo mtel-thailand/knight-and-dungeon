@@ -27,34 +27,50 @@ import { CAMP_PAGE_CSS } from "./campStyles";
 function CharacterAvatar({ charId, name, animations }: { charId: string; name: string; animations: any[] }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const anim = animations.find((a: any) => a.key?.startsWith(charId + "-"));
-    if (!anim?.image || !anim?.frameData) return;
+    const candidates = animations.filter((a: any) => a.key?.startsWith(charId + "-"));
+    if (candidates.length === 0) return;
     let destroyed = false;
     let pixiApp: any = null;
     let sprite: any = null;
     (async () => {
       const { Application, Assets, Spritesheet, AnimatedSprite } = await import("pixi.js");
       if (destroyed) return;
-      const el = ref.current;
-      if (!el) return;
-      el.innerHTML = "";
-      pixiApp = new Application();
-      await pixiApp.init({ resizeTo: el, backgroundAlpha: 0, antialias: true });
-      if (destroyed) { pixiApp.destroy(); return; }
-      el.appendChild(pixiApp.canvas);
-      const url = assetUrl(anim.image);
-      const texture = await Assets.load(url);
-      if (destroyed) { pixiApp.destroy(); return; }
-      const sheet = new Spritesheet(texture, anim.frameData);
-      await sheet.parse();
-      const frames = Object.keys(sheet.data.frames).map((n: string) => sheet.textures[n]);
-      sprite = new AnimatedSprite(frames);
-      sprite.anchor.set(0.5);
-      const s = 64 / (Math.max(sheet.data.meta?.size?.w ?? 64, sheet.data.meta?.size?.h ?? 64) || 64);
-      sprite.scale.set(s, s);
-      sprite.animationSpeed = frames.length / (2 * 60);
-      sprite.play();
-      pixiApp.stage.addChild(sprite);
+      // Try each candidate animation until one loads successfully
+      for (const anim of candidates) {
+        if (destroyed) return;
+        if (!anim?.image || !anim?.frameData) continue;
+        try {
+          const url = assetUrl(anim.image);
+          await Assets.load(url);
+        } catch { continue; }
+        if (destroyed) return;
+        const el = ref.current;
+        if (!el) return;
+        pixiApp = new Application();
+        await pixiApp.init({ resizeTo: el, backgroundAlpha: 0, antialias: true });
+        if (destroyed) { pixiApp.destroy(); return; }
+        el.innerHTML = "";
+        el.appendChild(pixiApp.canvas);
+        try {
+          const texture = await Assets.load(assetUrl(anim.image));
+          if (destroyed) { pixiApp.destroy(); return; }
+          const sheet = new Spritesheet(texture, anim.frameData);
+          await sheet.parse();
+          const frames = Object.keys(sheet.data.frames).map((n: string) => sheet.textures[n]);
+          sprite = new AnimatedSprite(frames);
+          sprite.anchor.set(0.5);
+          sprite.position.set(pixiApp.screen.width / 2, pixiApp.screen.height / 2);
+          const s = 64 / (Math.max(sheet.data.meta?.size?.w ?? 64, sheet.data.meta?.size?.h ?? 64) || 64);
+          sprite.scale.set(s, s);
+          sprite.animationSpeed = frames.length / (2 * 60);
+          sprite.play();
+          pixiApp.stage.addChild(sprite);
+          return; // success — stop trying
+        } catch {
+          if (pixiApp) { try { pixiApp.destroy(); } catch {} pixiApp = null; }
+          continue; // try next candidate
+        }
+      }
     })();
     return () => {
       destroyed = true;
