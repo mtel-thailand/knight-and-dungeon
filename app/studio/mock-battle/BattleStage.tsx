@@ -256,6 +256,7 @@ function BattleStage({
     app: any;
     wrapper: HTMLDivElement;
     manaTank: any;
+    manaCountText: any;
     manaLevel: number; // current gauge frame
     manaCount: number; // how many crystals collected (0-10)
     crystalShardTex: any;
@@ -275,7 +276,7 @@ function BattleStage({
 
     async function initPixi() {
       const pixi = await import("pixi.js");
-      const { Application, Assets, AnimatedSprite, Spritesheet } = pixi as any;
+      const { Application, Assets, AnimatedSprite, Spritesheet, Text } = pixi as any;
       if (destroyed) return;
 
       wrapper = document.createElement("div");
@@ -347,8 +348,23 @@ function BattleStage({
       } catch { /* fallback */ }
       if (destroyed) { pixiApp.destroy(); return; }
 
+      // Mana count text (right of gauge)
+      let manaCountText: any = null;
+      if (manaTank) {
+        manaCountText = new Text("0/10", {
+          fontFamily: dmgFont.style.fontFamily,
+          fontSize: 18,
+          fill: 0x88ccff,
+          fontWeight: "bold",
+        });
+        manaCountText.anchor.set(0, 0.5);
+        manaCountText.position.set(110, 65);
+        manaCountText.zIndex = 9999;
+        pixiApp.stage.addChild(manaCountText);
+      }
+
       // Store in ref for Effect 2
-      pixiCtx.current = { app: pixiApp, wrapper, manaTank, manaLevel: 0, manaCount: 0, crystalShardTex, pixi };
+      pixiCtx.current = { app: pixiApp, wrapper, manaTank, manaCountText, manaLevel: 0, manaCount: 0, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -381,10 +397,14 @@ function BattleStage({
       const pixi = ctx!.pixi;
       const { Application: _, Assets, AnimatedSprite, Graphics, Spritesheet, Text, Container, Sprite } = pixi;
       const manaTank = ctx!.manaTank;
+      const manaCountText = ctx!.manaCountText;
       const crystalShardTex = ctx!.crystalShardTex;
       // Restore persisted mana gauge level
       if (manaTank && ctx!.manaLevel !== undefined) {
         manaTank.currentFrame = ctx!.manaLevel;
+      }
+      if (manaCountText && ctx!.manaCount !== undefined) {
+        manaCountText.text = `${ctx!.manaCount}/10`;
       }
 
       const catalog: any[] = config.animations ?? [];
@@ -1207,6 +1227,7 @@ function BattleStage({
           const idx = Math.min(ctx!.manaCount - 1, MANA_FRAMES.length - 1);
           manaTank.currentFrame = Math.min(107, MANA_FRAMES[idx]);
           ctx!.manaLevel = manaTank.currentFrame;
+          if (manaCountText) manaCountText.text = `${ctx!.manaCount}/10`;
         }
         shard.destroy();
       }
