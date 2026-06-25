@@ -1169,12 +1169,13 @@ function BattleStage({
         shard.position.set(x, y);
         shard.alpha = 0;
         shard.zIndex = 9999;
+        shard.scale.set(0.25);
         pixiApp.stage.addChild(shard);
         cleanups.push(() => { try { shard.destroy(); } catch {} });
         // Phase 1: fade in + drop down
         await tween(250, (p) => {
           shard.alpha = Math.min(1, p * 3);
-          shard.position.y = y + 60 * easeOutCubic(p);
+          shard.position.y = y + 30 * easeOutCubic(p);
         }, myId);
         if (destroyed || genId !== myId) return;
         // Phase 2: fly to mana tank (top-left 60,60) + shrink + fade out
@@ -1186,7 +1187,7 @@ function BattleStage({
           shard.position.x = startX + (tx - startX) * e;
           shard.position.y = startY + (ty - startY) * e;
           shard.alpha = 1 - e * 0.85;
-          shard.scale.set(1 - e * 0.5);
+          shard.scale.set(0.25 * (1 - e));
         }, myId);
         // Brief mana tank glow on absorption
         if (manaTank) {
