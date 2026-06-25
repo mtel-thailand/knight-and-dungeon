@@ -110,12 +110,19 @@ export const BATTLE_REWARD_EFFECTS: readonly BattleRewardEffect[] = [
   "restoreHp",
   "defFlat",
 ] as const;
+export type BattleRewardRarity = "common" | "uncommon" | "rare";
+export const BATTLE_REWARD_RARITIES: readonly BattleRewardRarity[] = [
+  "common",
+  "uncommon",
+  "rare",
+] as const;
 
 /** CMS entity, persisted in `battle_rewards`, surfaced in GET /api/config as `battleRewards`. */
 export type BattleRewardDef = {
   id: string;
   name: string;
   description: string; // short flavour text shown on the reward card
+  rarity: BattleRewardRarity;
   effect: BattleRewardEffect;
   effectValue: number; // meaning depends on effect type (percent points, flat HP, flat DEF)
 };
@@ -125,15 +132,15 @@ export const BATTLE_REWARD_BOUNDS = {
 } as const;
 
 export const DEFAULT_BATTLE_REWARDS: BattleRewardDef[] = [
-  { id: "heal-50", name: "Heal I", description: "Restore 50 HP", effect: "restoreHp", effectValue: 50 },
-  { id: "heal-100", name: "Heal II", description: "Restore 100 HP", effect: "restoreHp", effectValue: 100 },
-  { id: "heal-200", name: "Heal III", description: "Restore 200 HP", effect: "restoreHp", effectValue: 200 },
-  { id: "atk-10", name: "Power I", description: "ATK plus 10%", effect: "atkPercent", effectValue: 10 },
-  { id: "atk-20", name: "Power II", description: "ATK plus 20%", effect: "atkPercent", effectValue: 20 },
-  { id: "atk-30", name: "Power III", description: "ATK plus 30%", effect: "atkPercent", effectValue: 30 },
-  { id: "def-5", name: "Fortify I", description: "Def plus 5", effect: "defFlat", effectValue: 5 },
-  { id: "def-10", name: "Fortify II", description: "Def plus 10", effect: "defFlat", effectValue: 10 },
-  { id: "def-15", name: "Fortify III", description: "Def plus 15", effect: "defFlat", effectValue: 15 },
+  { id: "heal-50", name: "Heal I", description: "Restore 50 HP", rarity: "common", effect: "restoreHp", effectValue: 50 },
+  { id: "heal-100", name: "Heal II", description: "Restore 100 HP", rarity: "uncommon", effect: "restoreHp", effectValue: 100 },
+  { id: "heal-200", name: "Heal III", description: "Restore 200 HP", rarity: "rare", effect: "restoreHp", effectValue: 200 },
+  { id: "atk-10", name: "Power I", description: "ATK plus 10%", rarity: "common", effect: "atkPercent", effectValue: 10 },
+  { id: "atk-20", name: "Power II", description: "ATK plus 20%", rarity: "uncommon", effect: "atkPercent", effectValue: 20 },
+  { id: "atk-30", name: "Power III", description: "ATK plus 30%", rarity: "rare", effect: "atkPercent", effectValue: 30 },
+  { id: "def-1", name: "Fortify I", description: "Def plus 1", rarity: "common", effect: "defFlat", effectValue: 1 },
+  { id: "def-3", name: "Fortify II", description: "Def plus 3", rarity: "uncommon", effect: "defFlat", effectValue: 3 },
+  { id: "def-5", name: "Fortify III", description: "Def plus 5", rarity: "rare", effect: "defFlat", effectValue: 5 },
 ];
 
 export type UnitStats = {

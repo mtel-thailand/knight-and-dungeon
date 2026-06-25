@@ -39,6 +39,7 @@ export const CAMP_PAGE_CSS = `
   border-radius: 50%;
   animation: camp-spin 0.7s linear infinite;
 }
+.camp-spinner.small { width: 16px; height: 16px; }
 
 /* ── Idle screen — campaign launch ─────────────────────────────────── */
 
@@ -151,6 +152,57 @@ export const CAMP_PAGE_CSS = `
   display: flex; flex-direction: column;
 }
 
+/* ── Bottom character stats HUD ────────────────────────────────────── */
+
+.camp-bottom-stats {
+  height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; padding: 14px 16px; box-sizing: border-box;
+  overflow-x: auto;
+}
+.camp-stat-card {
+  min-width: min(220px, 88vw);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(8,10,16,0.56);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.camp-stat-name {
+  font-family: 'Cinzel', serif;
+  font-size: 16px; font-weight: 700;
+  color: #edf0f5;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.camp-stat-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.camp-stat-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.045);
+  border: 1px solid rgba(255,255,255,0.055);
+}
+.camp-stat-pill span {
+  color: rgba(255,255,255,0.34);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.camp-stat-pill strong {
+  color: #46eccf;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 /* HUD — wave counter pill, top of the frame */
 .camp-hud {
   position: absolute; top: 0; left: 0; right: 0;
@@ -188,6 +240,24 @@ export const CAMP_PAGE_CSS = `
   border-color: rgba(70,236,207,0.4);
 }
 
+.camp-wave-loading {
+  position: absolute;
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 54;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  color: rgba(255,255,255,0.72);
+  background: rgba(8,10,16,0.66);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.38);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 /* ── Mid-campaign reward choice ────────────────────────────────────── */
 
 .camp-reward-scrim {
@@ -222,12 +292,25 @@ export const CAMP_PAGE_CSS = `
   box-shadow: 0 24px 60px rgba(0,0,0,0.48), inset 0 0 0 1px rgba(255,255,255,0.03);
   transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
 }
+.camp-reward-card.common {
+  border-color: rgba(255,255,255,0.42);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.48), 0 0 24px rgba(255,255,255,0.18), inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+.camp-reward-card.uncommon {
+  border-color: rgba(70,236,123,0.55);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.48), 0 0 28px rgba(70,236,123,0.28), inset 0 0 0 1px rgba(70,236,123,0.12);
+}
+.camp-reward-card.rare {
+  border-color: rgba(177,100,255,0.65);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.48), 0 0 34px rgba(177,100,255,0.34), inset 0 0 0 1px rgba(177,100,255,0.16);
+}
 .camp-reward-card:hover {
   transform: translateY(-5px);
   border-color: rgba(70,236,207,0.45);
   box-shadow: 0 30px 76px rgba(0,0,0,0.58), 0 0 34px rgba(70,236,207,0.12);
 }
 .camp-reward-card-name { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 700; }
+.camp-reward-card-rarity { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.46); }
 .camp-reward-card-effect { font-size: 15px; font-weight: 800; color: #46eccf; }
 .camp-reward-card-desc { font-size: 12px; line-height: 1.45; color: rgba(255,255,255,0.5); }
 @media (max-width: 520px) {

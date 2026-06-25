@@ -26,6 +26,7 @@ import type {
   CampaignDef,
   BattleRewardDef,
   BattleRewardEffect,
+  BattleRewardRarity,
 } from "@/lib/battle/types";
 import type { AnimationRow, CharacterSeed } from "@/app/api/config/db";
 import { DEFAULT_MAP_CONFIG, DEFAULT_DAMAGE_CONFIG, DEFAULT_SPELL_TEXT_CONFIG } from "@/lib/battle/types";
@@ -355,16 +356,20 @@ export async function listBattleRewards(): Promise<BattleRewardDef[]> {
     id: string;
     name: string;
     description: string;
+    rarity: string;
     effect: string;
     effect_value: number;
   }>(
-    `SELECT id, name, description, effect, effect_value
+    `SELECT id, name, description, rarity, effect, effect_value
      FROM battle_rewards ORDER BY sort_order, id`,
   );
   return result.rows.map((r) => ({
     id: r.id,
     name: r.name,
     description: r.description,
+    rarity: (["common", "uncommon", "rare"].includes(r.rarity)
+      ? r.rarity
+      : "common") as BattleRewardRarity,
     effect: (["atkPercent", "restoreHp", "defFlat"].includes(r.effect)
       ? r.effect
       : "atkPercent") as BattleRewardEffect,

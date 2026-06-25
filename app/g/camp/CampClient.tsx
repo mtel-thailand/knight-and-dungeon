@@ -74,6 +74,8 @@ export default function CampClient() {
   const [rewardChoices, setRewardChoices] = useState<BattleRewardDef[]>([]);
   const [pendingRewardParty, setPendingRewardParty] = useState<PartyMemberInput[]>([]);
   const [pendingRewardWave, setPendingRewardWave] = useState(1);
+  const [livePlayerHp, setLivePlayerHp] = useState<Record<string, number>>({});
+  const [resolvingWave, setResolvingWave] = useState(false);
 
   // Stable refs so async wave logic always reads the latest values.
   const activeCampaignRef = useRef(activeCampaign);
@@ -100,6 +102,12 @@ export default function CampClient() {
   }
 
   function pickRewardChoices(rewards: BattleRewardDef[]): BattleRewardDef[] {
+    function rollRarity(): BattleRewardDef["rarity"] {
+      const roll = Math.random();
+      if (roll < 0.5) return "common";
+      if (roll < 0.85) return "uncommon";
+      return "rare";
+    }
     const byEffect = new Map<string, BattleRewardDef[]>();
     for (const reward of rewards) {
       const group = byEffect.get(reward.effect) ?? [];
@@ -108,9 +116,12 @@ export default function CampClient() {
     }
     const choices: BattleRewardDef[] = [];
     for (const effect of BATTLE_REWARD_EFFECTS) {
-      const group = byEffect.get(effect) ?? [];
-      if (group.length === 0) continue;
-      choices.push(group[Math.floor(Math.random() * group.length)]);
+      const groupAll = byEffect.get(effect) ?? [];
+      const rarity = rollRarity();
+      const group = groupAll.filter((reward) => reward.rarity === rarity);
+      const fallback = group.length ? group : groupAll;
+      if (fallback.length === 0) continue;
+      choices.push(fallback[Math.floor(Math.random() * fallback.length)]);
       if (choices.length === 3) break;
     }
     return choices;
@@ -144,17 +155,54 @@ export default function CampClient() {
     setPlayerParty(nextParty);
     setRewardChoices([]);
     setPendingRewardParty([]);
-    setResult(null);
     setWaveIndex(nextWave);
     pausedRef.current = false;
     setPaused(false);
     setPhase("fighting");
+    setResolvingWave(true);
     runWave(nextWave, nextParty).then((res) => {
       if (res !== "ok") {
         setError(typeof res === "string" ? res : "Wave resolution failed");
         setPhase("lost");
       }
+    }).finally(() => {
+      setResolvingWave(false);
     });
+  }
+
+  function characterName(id: string): string {
+    return configRef.current?.characters.find((c) => c.id === id)?.name ?? id;
+  }
+
+  function renderPlayerStats() {
+    return (
+      <div className="camp-bottom-stats">
+        {playerParty.map((member, index) => {
+          const liveId = result?.initialState.units.find(
+            (u) =>
+              u.team === "player" &&
+              u.characterId === member.characterId &&
+              u.position.q === member.position.q &&
+              u.position.r === member.position.r,
+          )?.id;
+          const hp = liveId && livePlayerHp[liveId] !== undefined
+            ? livePlayerHp[liveId]
+            : member.currentHp ?? member.stats.hp;
+          return (
+            <div className="camp-stat-card" key={`${member.characterId}-${member.position.q}-${member.position.r}-${index}`}>
+              <div className="camp-stat-name">{characterName(member.characterId)}</div>
+              <div className="camp-stat-grid">
+                <span className="camp-stat-pill"><span>HP</span><strong>{hp}/{member.stats.hp}</strong></span>
+                <span className="camp-stat-pill"><span>ATK</span><strong>{member.stats.attack}</strong></span>
+                <span className="camp-stat-pill"><span>DEF</span><strong>{member.stats.defense}</strong></span>
+                <span className="camp-stat-pill"><span>SPD</span><strong>{member.stats.actionSpeed}</strong></span>
+                <span className="camp-stat-pill"><span>RNG</span><strong>{member.stats.range}</strong></span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
   }
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
@@ -233,6 +281,11 @@ export default function CampClient() {
     if (!outcome.ok) return outcome.error;
 
     setResult(outcome.result);
+    const openingHp: Record<string, number> = {};
+    for (const u of outcome.result.initialState.units) {
+      if (u.team === "player") openingHp[u.id] = u.hp;
+    }
+    setLivePlayerHp(openingHp);
     setWaveKey((prev) => prev + 1);
     return "ok";
   }
@@ -280,12 +333,15 @@ export default function CampClient() {
           setPaused(true);
         } else {
           setWaveIndex(curWave + 1);
+          setResolvingWave(true);
           // Trigger next wave asynchronously; use the party we just computed.
           runWave(curWave + 1, nextParty).then((res) => {
             if (res !== "ok") {
               setError(typeof res === "string" ? res : "Wave resolution failed");
               setPhase("lost");
             }
+          }).finally(() => {
+            setResolvingWave(false);
           });
         }
       } else {
@@ -317,10 +373,12 @@ export default function CampClient() {
       return;
     }
     setError(null);
+    setLivePlayerHp({});
     pausedRef.current = false;
     setPaused(false);
     setRewardChoices([]);
     setPendingRewardParty([]);
+    setResolvingWave(false);
     setPhase("fighting");
     setWaveIndex(1);
     runWave(1, party).then((res) => {
@@ -337,10 +395,12 @@ export default function CampClient() {
     setWaveKey(0);
     setWaveIndex(1);
     setError(null);
+    setLivePlayerHp({});
     pausedRef.current = false;
     setPaused(false);
     setRewardChoices([]);
     setPendingRewardParty([]);
+    setResolvingWave(false);
     // Re-fetch config to get fresh campaign/roster state
     setLoading(true);
     fetch("/api/config")
@@ -406,6 +466,7 @@ export default function CampClient() {
               centerBg="/assets/dungeon-bg.png"
               centerVideo="/assets/dungeon-bg.mp4"
               bgm="/assets/audio/battle-bgm.mp3"
+              bottom={renderPlayerStats()}
               center={
                 <BattleStage
                   key={waveKey}
@@ -413,6 +474,9 @@ export default function CampClient() {
                   config={config}
                   {...refs}
                   pausedRef={pausedRef}
+                  onUnitHpChange={(unitId, hp) => {
+                    setLivePlayerHp((prev) => ({ ...prev, [unitId]: hp }));
+                  }}
                   onReady={() => {}}
                   onEnd={onWaveEnd}
                 />
@@ -426,11 +490,12 @@ export default function CampClient() {
                     {rewardChoices.map((reward) => (
                       <button
                         key={reward.id}
-                        className="camp-reward-card"
+                        className={`camp-reward-card ${reward.rarity}`}
                         type="button"
                         onClick={() => chooseReward(reward)}
                       >
                         <span className="camp-reward-card-name">{reward.name}</span>
+                        <span className="camp-reward-card-rarity">{reward.rarity}</span>
                         <span className="camp-reward-card-effect">{rewardSummary(reward)}</span>
                         <span className="camp-reward-card-desc">
                           {reward.description || rewardSummary(reward)}
@@ -439,6 +504,12 @@ export default function CampClient() {
                     ))}
                   </div>
                 </div>
+              </div>
+            ) : null}
+            {resolvingWave ? (
+              <div className="camp-wave-loading" aria-live="polite">
+                <div className="camp-spinner small" />
+                <span>Preparing wave {waveIndex}…</span>
               </div>
             ) : null}
           </div>

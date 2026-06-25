@@ -94,5 +94,5 @@ export const CAMPAIGNS_PAGE_CSS = `
   .campaigns-page .campaign-rewards-section { margin-top: 34px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); }
   .campaigns-page .reward-editor-list { display: flex; flex-direction: column; gap: 10px; }
   .campaigns-page .reward-editor-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: rgba(255,255,255,0.03); }
-  .campaigns-page .reward-editor-row { display: grid; grid-template-columns: 1fr 110px auto; gap: 8px; }
+  .campaigns-page .reward-editor-row { display: grid; grid-template-columns: 1fr 1fr 110px auto; gap: 8px; }
 `; 

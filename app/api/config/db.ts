@@ -16,6 +16,7 @@ import type {
   CampaignDef,
   BattleRewardDef,
   BattleRewardEffect,
+  BattleRewardRarity,
 } from "@/lib/battle/types";
 
 const DB_DIR = path.join(process.cwd(), "data");
@@ -140,6 +141,7 @@ function createDb(): Database.Database {
       id            TEXT PRIMARY KEY,
       name          TEXT NOT NULL,
       description   TEXT NOT NULL DEFAULT '',
+      rarity        TEXT NOT NULL DEFAULT 'common',
       effect        TEXT NOT NULL DEFAULT 'atkPercent',
       effect_value  REAL NOT NULL DEFAULT 10,
       sort_order    INTEGER NOT NULL DEFAULT 0
@@ -226,6 +228,16 @@ function createDb(): Database.Database {
   if (!spellCols.has("transition_out")) {
     db.exec("ALTER TABLE spells ADD COLUMN transition_out TEXT");
   }
+  const rewardCols = new Set(
+    (
+      db
+        .prepare("SELECT name FROM pragma_table_info('battle_rewards')")
+        .all() as Array<{ name: string }>
+    ).map((c) => c.name),
+  );
+  if (!rewardCols.has("rarity")) {
+    db.exec("ALTER TABLE battle_rewards ADD COLUMN rarity TEXT NOT NULL DEFAULT 'common'");
+  }
   const rewardCount = (
     db.prepare("SELECT COUNT(*) AS n FROM battle_rewards").get() as { n: number }
   ).n;
@@ -239,6 +251,7 @@ function createDb(): Database.Database {
         id: reward.id,
         name: reward.name,
         description: reward.description,
+        rarity: reward.rarity,
         effect: reward.effect,
         effect_value: reward.effectValue,
         sort_order: i,
@@ -1032,13 +1045,14 @@ export function setRoster(data: unknown): void {
 export function listBattleRewards(): BattleRewardDef[] {
   const rows = getDb()
     .prepare(
-      `SELECT id, name, description, effect, effect_value
+      `SELECT id, name, description, rarity, effect, effect_value
          FROM battle_rewards ORDER BY sort_order, id`,
     )
     .all() as Array<{
     id: string;
     name: string;
     description: string;
+    rarity: string;
     effect: string;
     effect_value: number;
   }>;
@@ -1046,6 +1060,9 @@ export function listBattleRewards(): BattleRewardDef[] {
     id: r.id,
     name: r.name,
     description: r.description,
+    rarity: (["common", "uncommon", "rare"].includes(r.rarity)
+      ? r.rarity
+      : "common") as BattleRewardRarity,
     effect: (["atkPercent", "restoreHp", "defFlat"].includes(r.effect)
       ? r.effect
       : "atkPercent") as BattleRewardEffect,
@@ -1058,6 +1075,7 @@ export function upsertBattleReward(r: {
   id: string;
   name: string;
   description?: string;
+  rarity?: BattleRewardRarity;
   effect?: BattleRewardEffect;
   effectValue?: number;
   sortOrder?: number;
@@ -1071,17 +1089,19 @@ export function upsertBattleReward(r: {
         .get() as { n: number }
     ).n;
   db.prepare(
-    `INSERT INTO battle_rewards (id, name, description, effect, effect_value, sort_order)
-       VALUES (@id, @name, @description, @effect, @effect_value, @sort_order)
+    `INSERT INTO battle_rewards (id, name, description, rarity, effect, effect_value, sort_order)
+       VALUES (@id, @name, @description, @rarity, @effect, @effect_value, @sort_order)
      ON CONFLICT(id) DO UPDATE SET
        name          = excluded.name,
        description   = excluded.description,
+       rarity        = excluded.rarity,
        effect        = excluded.effect,
        effect_value  = excluded.effect_value`,
   ).run({
     id: r.id,
     name: r.name,
     description: r.description ?? "",
+    rarity: r.rarity ?? "common",
     effect: r.effect ?? "atkPercent",
     effect_value: r.effectValue ?? 10,
     sort_order: sortOrder,

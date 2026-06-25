@@ -224,6 +224,7 @@ export type StageProps = {
   // Optional live pause flag for game-screen HUDs. Kept as a ref so toggling pause
   // never tears down the Pixi app/replay effect.
   pausedRef?: React.MutableRefObject<boolean>;
+  onUnitHpChange?: (unitId: string, hp: number) => void;
   onReady: () => void;
   onEnd: (r: "win" | "lose" | "draw") => void;
 };
@@ -240,6 +241,7 @@ function BattleStage({
   showGridRef,
   gridVisibleRef,
   pausedRef,
+  onUnitHpChange,
   onReady,
   onEnd,
 }: StageProps) {
@@ -872,6 +874,7 @@ function BattleStage({
         const from = su.hp / su.maxHp;
         const to = clamp(newHp / su.maxHp, 0, 1);
         su.hp = newHp;
+        onUnitHpChange?.(su.id, newHp);
         return tween(
           HPBAR_MS,
           (p) => {
@@ -1194,6 +1197,7 @@ function BattleStage({
           const init = initialById[id];
           su.dead = false;
           su.hp = init.hp;
+          onUnitHpChange?.(su.id, init.hp);
           su.q = init.q;
           su.r = init.r;
           const p = pixelOf(init.q, init.r);

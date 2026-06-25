@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { upsertBattleReward, deleteBattleReward } from "../db";
-import type { BattleRewardDef, BattleRewardEffect } from "@/lib/battle/types";
+import type { BattleRewardDef, BattleRewardEffect, BattleRewardRarity } from "@/lib/battle/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,9 +38,13 @@ export async function POST(req: NextRequest) {
     );
   }
   const validEffects: BattleRewardEffect[] = ["atkPercent", "restoreHp", "defFlat"];
+  const validRarities: BattleRewardRarity[] = ["common", "uncommon", "rare"];
   const effect: BattleRewardEffect = validEffects.includes(reward.effect as BattleRewardEffect)
     ? (reward.effect as BattleRewardEffect)
     : "atkPercent";
+  const rarity: BattleRewardRarity = validRarities.includes(reward.rarity as BattleRewardRarity)
+    ? (reward.rarity as BattleRewardRarity)
+    : "common";
   const effectValue =
     typeof reward.effectValue === "number" && Number.isFinite(reward.effectValue)
       ? Math.max(1, Math.min(10000, Math.floor(reward.effectValue)))
@@ -49,6 +53,7 @@ export async function POST(req: NextRequest) {
     id: reward.id,
     name: reward.name,
     description: typeof reward.description === "string" ? reward.description : "",
+    rarity,
     effect,
     effectValue,
   });

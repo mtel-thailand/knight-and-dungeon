@@ -9,8 +9,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { BattleRewardDef, BattleRewardEffect, CampaignDef } from "@/lib/battle/types";
-import { BATTLE_REWARD_EFFECTS, DEFAULT_BATTLE_REWARDS } from "@/lib/battle/types";
+import type { BattleRewardDef, BattleRewardEffect, BattleRewardRarity, CampaignDef } from "@/lib/battle/types";
+import { BATTLE_REWARD_EFFECTS, BATTLE_REWARD_RARITIES, DEFAULT_BATTLE_REWARDS } from "@/lib/battle/types";
 import { slugify } from "../studioHelpers";
 import type { BootstrapPayload } from "../studioTypes";
 import { CAMPAIGNS_PAGE_CSS } from "./campaignsStyles";
@@ -320,6 +320,16 @@ export default function CampaignsListPage() {
                   aria-label={`${r.id} reward description`}
                 />
                 <div className="reward-editor-row">
+                  <select
+                    className="campaign-input"
+                    value={r.rarity}
+                    onChange={(e) => saveReward({ ...r, rarity: e.target.value as BattleRewardRarity })}
+                    aria-label={`${r.id} reward rarity`}
+                  >
+                    {BATTLE_REWARD_RARITIES.map((rarity) => (
+                      <option key={rarity} value={rarity}>{rarity}</option>
+                    ))}
+                  </select>
                   <select
                     className="campaign-input"
                     value={r.effect}
