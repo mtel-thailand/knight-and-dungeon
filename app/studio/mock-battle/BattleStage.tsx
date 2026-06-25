@@ -1178,7 +1178,7 @@ function BattleStage({
           shard.position.y = y + 30 * easeOutCubic(p);
         }, myId);
         if (destroyed || genId !== myId) return;
-        // Phase 2: fly to mana tank (top-left 60,60) + shrink + fade out
+        // Phase 2: fly to mana tank (top-left 60,60) — stay fully visible, shrink only
         const startX = shard.position.x;
         const startY = shard.position.y;
         const tx = 60; const ty = 60;
@@ -1186,12 +1186,11 @@ function BattleStage({
           const e = easeOutCubic(p);
           shard.position.x = startX + (tx - startX) * e;
           shard.position.y = startY + (ty - startY) * e;
-          shard.alpha = 1 - e * 0.85;
-          shard.scale.set(0.25 * (1 - e));
+          shard.scale.set(0.25 * (1 - e * 0.5));
         }, myId);
         // Phase 3: slow fade out at mana tank
-        await tween(400, (p) => {
-          shard.alpha = 0.2 * (1 - easeOutCubic(p));
+        await tween(500, (p) => {
+          shard.alpha = 1 - easeOutCubic(p);
         }, myId);
         // Brief mana tank glow + sound on absorption
         playSound("audio/crystal-absorb.wav", 2);
