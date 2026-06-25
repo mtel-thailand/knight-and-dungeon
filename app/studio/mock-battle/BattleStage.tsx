@@ -256,6 +256,7 @@ function BattleStage({
     app: any;
     wrapper: HTMLDivElement;
     manaTank: any;
+    manaLevel: number; // current gauge frame, persists across re-fights
     crystalShardTex: any;
     pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any; Sprite: any };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -346,7 +347,7 @@ function BattleStage({
       if (destroyed) { pixiApp.destroy(); return; }
 
       // Store in ref for Effect 2
-      pixiCtx.current = { app: pixiApp, wrapper, manaTank, crystalShardTex, pixi };
+      pixiCtx.current = { app: pixiApp, wrapper, manaTank, manaLevel: 0, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -380,6 +381,10 @@ function BattleStage({
       const { Application: _, Assets, AnimatedSprite, Graphics, Spritesheet, Text, Container, Sprite } = pixi;
       const manaTank = ctx!.manaTank;
       const crystalShardTex = ctx!.crystalShardTex;
+      // Restore persisted mana gauge level
+      if (manaTank && ctx!.manaLevel !== undefined) {
+        manaTank.currentFrame = ctx!.manaLevel;
+      }
 
       const catalog: any[] = config.animations ?? [];
       const framesByKey: Record<string, any[]> = {};
@@ -1197,6 +1202,8 @@ function BattleStage({
         if (manaTank) {
           // 10 crystals fill from empty (frame 0) to full (frame 96)
           manaTank.currentFrame = Math.min(96, (manaTank.currentFrame ?? 0) + 10);
+          // Persist level in ref so it survives re-fights
+          ctx!.manaLevel = manaTank.currentFrame;
         }
         shard.destroy();
       }
@@ -1290,10 +1297,10 @@ function BattleStage({
                   su.dead ? Promise.resolve() : doDeath(su, myId),
                 ),
               );
-            // Spawn crystal shard when enemy dies (flies to mana gauge)
+            // Spawn crystal shard when enemy dies — fire-and-forget, don't block other animations
             if (su && su.team === "enemy" && crystalShardTex) {
               const pos = su.node.getGlobalPosition();
-              tasks.push(spawnCrystalShard(pos.x, pos.y, myId));
+              spawnCrystalShard(pos.x, pos.y, myId).catch(() => {});
             }
           }
           // "end" is handled by the replay loop (triggers the result screen).
