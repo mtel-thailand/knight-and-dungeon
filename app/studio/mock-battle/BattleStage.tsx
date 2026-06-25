@@ -689,7 +689,7 @@ function BattleStage({
         manaTank.loop = false;
         // 97 frames at ~60fps ticker = ~1.6s
         manaTank.animationSpeed = manaFrames.length / (97 / 60);
-        manaTank.play();
+        manaTank.stop();
         pixiApp.stage.addChild(manaTank);
       }
 
@@ -1253,13 +1253,14 @@ function BattleStage({
         // Reset mana tank animation on replay
         if (manaTank) {
           manaTank.currentFrame = 0;
-          manaTank.play();
+          manaTank.stop();
         }
       }
 
       async function runReplay() {
         const myId = ++genId; // cancels any in-flight replay
         resetAll();
+        if (manaTank) manaTank.play();
         await wait(260);
         if (destroyed || genId !== myId) return;
 
