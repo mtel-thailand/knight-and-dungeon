@@ -491,4 +491,22 @@ export const CAMP_PAGE_CSS = `
 @keyframes camp-spin {
   to { transform: rotate(360deg); }
 }
+
+/* ── Character selection ───────────────────────────────────────────── */
+
+.camp-char-grid {
+  display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+  margin: 18px 0;
+}
+.camp-char-card {
+  background: rgba(255,255,255,0.04); border: 2px solid rgba(255,255,255,0.1);
+  border-radius: 12px; padding: 8px; cursor: pointer; transition: all 0.15s;
+  min-width: 90px; text-align: center;
+}
+.camp-char-card:hover { border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.07); }
+.camp-char-card.on { border-color: #3b82f6; background: rgba(59,130,246,0.12); box-shadow: 0 0 12px rgba(59,130,246,0.25); }
+.camp-char-card:disabled { opacity: 0.35; cursor: not-allowed; }
+.camp-char-avatar canvas { display: block; width: 64px; height: 64px; border-radius: 8px; margin: 0 auto; image-rendering: pixelated; }
+.camp-char-name { display: block; font-size: 11px; font-weight: 600; margin-top: 6px; color: #c8d6e5; }
+.camp-char-card.on .camp-char-name { color: #60a5fa; }
 `;

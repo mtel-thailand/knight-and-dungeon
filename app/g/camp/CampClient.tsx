@@ -22,24 +22,56 @@ import { CAMP_PAGE_CSS } from "./campStyles";
 // State machine: idle → fighting → won / lost
 // ────────────────────────────────────────────────────────────────────────────
 
+/** Render a character's first idle animation frame on a canvas. */
+function CharacterAvatar({ charId, name, animations }: { charId: string; name: string; animations: any[] }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const anim = animations.find((a: any) => a.key?.startsWith(charId + "-"));
+    if (!anim?.image || !anim?.frameData?.frames) return;
+    const frames = Object.values(anim.frameData.frames) as any[];
+    const first = frames[0]?.frame ?? { x: 0, y: 0, w: 64, h: 64 };
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const c = ref.current;
+      if (!c) return;
+      c.width = first.w;
+      c.height = first.h;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, first.w, first.h);
+      ctx.drawImage(img, first.x, first.y, first.w, first.h, 0, 0, first.w, first.h);
+    };
+    img.src = anim.image.startsWith("http") ? anim.image : `/assets/${anim.image}`;
+  }, [charId, animations]);
+  return (
+    <div className="camp-char-avatar">
+      <canvas ref={ref} />
+      <span className="camp-char-name">{name}</span>
+    </div>
+  );
+}
+
 type Phase = "idle" | "fighting" | "reward" | "won" | "lost";
 
 /**
- * TEMP ("for now"): the camp player party is a single fixed `blue`, regardless of
- * any saved roster. To restore multi-unit / party-select parties, rebuild this
- * from cfg.roster (and update both call sites). `blue` must exist in
- * character_battle_stats — currently inserted directly into the DB, NOT in
- * data/seed-battle.ts yet, so it won't survive a re-seed; else the guard fires.
+ * Build a player party from selected character IDs.
+ * Each character is positioned in a deploy hex slot.
  */
-function getCampParty(config: BootstrapConfig): PartyMemberInput[] {
-  const s = config.battleStats?.["blue"];
-  if (!s) return [];
-  return [{
-    characterId: "blue",
-    stats: { ...s, attackType: s.attackType ?? "melee", skills: s.skills ?? [] },
-    spells: spellsFor("blue", config),
-    position: deployHex("player", 0),
-  }];
+function buildParty(charIds: string[], config: BootstrapConfig): PartyMemberInput[] {
+  const party: PartyMemberInput[] = [];
+  for (let i = 0; i < charIds.length && i < BOARD.maxPerSide; i++) {
+    const charId = charIds[i];
+    const s = config.battleStats?.[charId];
+    if (!s) continue;
+    party.push({
+      characterId: charId,
+      stats: { ...s, attackType: s.attackType ?? "melee", skills: s.skills ?? [] },
+      spells: spellsFor(charId, config),
+      position: deployHex("player", i),
+    });
+  }
+  return party;
 }
 
 /** Resolve a character's owned spell ids -> the engine's SpellInput configs
@@ -77,6 +109,7 @@ export default function CampClient() {
   const [rewardChoices, setRewardChoices] = useState<BattleRewardDef[]>([]);
   const [pendingRewardParty, setPendingRewardParty] = useState<PartyMemberInput[]>([]);
   const [pendingRewardWave, setPendingRewardWave] = useState(1);
+  const [selectedCharIds, setSelectedCharIds] = useState<string[]>(["blue"]);
   const [livePlayerHp, setLivePlayerHp] = useState<Record<string, number>>({});
   const [resolvingWave, setResolvingWave] = useState(false);
 
@@ -226,8 +259,8 @@ export default function CampClient() {
             : null) ?? null;
         setActiveCampaign(camp);
 
-        // Build initial player party (TEMP: fixed single blue — see getCampParty)
-        setPlayerParty(getCampParty(cfg));
+        // Build initial player party from selected characters
+        setPlayerParty(buildParty(selectedCharIds, cfg));
       } catch {
         // Offline — empty config
         if (!cancelled) {
@@ -425,7 +458,7 @@ export default function CampClient() {
             ? data.campaigns.find((c: CampaignDef) => c.isActive)
             : null) ?? null;
         setActiveCampaign(camp);
-        setPlayerParty(getCampParty(cfg));
+        setPlayerParty(buildParty(selectedCharIds, cfg));
         setLoading(false);
       })
       .catch(() => {
@@ -580,8 +613,42 @@ export default function CampClient() {
                   </span>
                   <span className="camp-stat-dot" />
                   <span>
-                    {playerParty.length} fighter{playerParty.length !== 1 ? "s" : ""}
+                    {selectedCharIds.length} fighter{selectedCharIds.length !== 1 ? "s" : ""}
                   </span>
+                </div>
+
+                {/* Character selection grid */}
+                <div className="camp-char-grid">
+                  {(config?.characters ?? []).map((ch) => {
+                    const on = selectedCharIds.includes(ch.id);
+                    const hasStats = !!config?.battleStats?.[ch.id];
+                    return (
+                      <button key={ch.id}
+                        className={`camp-char-card${on ? " on" : ""}`}
+                        disabled={!hasStats}
+                        onClick={() => {
+                          setSelectedCharIds((prev) =>
+                            on
+                              ? prev.filter((id) => id !== ch.id)
+                              : [...prev, ch.id]
+                          );
+                          const cfg = configRef.current;
+                          if (cfg) setPlayerParty(buildParty(
+                            on
+                              ? selectedCharIds.filter((id) => id !== ch.id)
+                              : [...selectedCharIds, ch.id],
+                            cfg,
+                          ));
+                        }}
+                      >
+                        <CharacterAvatar
+                          charId={ch.id}
+                          name={ch.name}
+                          animations={config?.animations ?? []}
+                        />
+                      </button>
+                    );
+                  })}
                 </div>
                 <button className="camp-start-btn" onClick={startCampaign}>
                   Start campaign
