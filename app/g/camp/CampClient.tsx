@@ -110,6 +110,7 @@ export default function CampClient() {
   const [pendingRewardParty, setPendingRewardParty] = useState<PartyMemberInput[]>([]);
   const [pendingRewardWave, setPendingRewardWave] = useState(1);
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>(["blue"]);
+  const [userCharacters, setUserCharacters] = useState<Record<string, { level: number; exp: number }>>({});
   const [livePlayerHp, setLivePlayerHp] = useState<Record<string, number>>({});
   const [resolvingWave, setResolvingWave] = useState(false);
 
@@ -261,6 +262,27 @@ export default function CampClient() {
 
         // Build initial player party from selected characters
         setPlayerParty(buildParty(selectedCharIds, cfg));
+
+        // Fetch user's owned characters
+        if (userId) {
+          try {
+            const ucRes = await fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`);
+            const ucData = await ucRes.json();
+            if (ucData.ok && Array.isArray(ucData.characters)) {
+              const owned: Record<string, { level: number; exp: number }> = {};
+              const ownedIds: string[] = [];
+              for (const c of ucData.characters) {
+                owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0 };
+                ownedIds.push(c.characterId);
+              }
+              setUserCharacters(owned);
+              if (ownedIds.length > 0) {
+                setSelectedCharIds(ownedIds.slice(0, BOARD.maxPerSide));
+                setPlayerParty(buildParty(ownedIds.slice(0, BOARD.maxPerSide), cfg));
+              }
+            }
+          } catch { /* server unavailable */ }
+        }
       } catch {
         // Offline — empty config
         if (!cancelled) {
@@ -459,6 +481,18 @@ export default function CampClient() {
             : null) ?? null;
         setActiveCampaign(camp);
         setPlayerParty(buildParty(selectedCharIds, cfg));
+        // Re-fetch user's owned characters
+        if (userId) {
+          fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`)
+            .then((r) => r.json())
+            .then((ucData) => {
+              if (ucData.ok && Array.isArray(ucData.characters)) {
+                const owned: Record<string, { level: number; exp: number }> = {};
+                for (const c of ucData.characters) owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0 };
+                setUserCharacters(owned);
+              }
+            }).catch(() => {});
+        }
         setLoading(false);
       })
       .catch(() => {
@@ -617,11 +651,15 @@ export default function CampClient() {
                   </span>
                 </div>
 
-                {/* Character selection grid */}
+                {/* Character selection grid — owned characters, or all with stats if no user */}
                 <div className="camp-char-grid">
-                  {(config?.characters ?? []).map((ch) => {
+                  {(config?.characters ?? []).filter((ch) => {
+                    if (Object.keys(userCharacters).length > 0) return ch.id in userCharacters;
+                    return !!config?.battleStats?.[ch.id];
+                  }).map((ch) => {
                     const on = selectedCharIds.includes(ch.id);
                     const hasStats = !!config?.battleStats?.[ch.id];
+                    const uc = userCharacters[ch.id];
                     return (
                       <button key={ch.id}
                         className={`camp-char-card${on ? " on" : ""}`}
@@ -646,6 +684,7 @@ export default function CampClient() {
                           name={ch.name}
                           animations={config?.animations ?? []}
                         />
+                        {uc ? <span className="camp-char-lv">Lv.{uc.level}</span> : null}
                       </button>
                     );
                   })}

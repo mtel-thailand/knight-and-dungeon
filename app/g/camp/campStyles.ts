@@ -509,4 +509,5 @@ export const CAMP_PAGE_CSS = `
 .camp-char-avatar canvas { display: block; width: 64px; height: 64px; border-radius: 8px; margin: 0 auto; image-rendering: pixelated; }
 .camp-char-name { display: block; font-size: 11px; font-weight: 600; margin-top: 6px; color: #c8d6e5; }
 .camp-char-card.on .camp-char-name { color: #60a5fa; }
+.camp-char-lv { display: block; font-size: 10px; color: #667788; margin-top: 2px; }
 `;
