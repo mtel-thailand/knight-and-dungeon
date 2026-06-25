@@ -259,6 +259,7 @@ function BattleStage({
     uiApp: any;
     manaTank: any;
     manaCountText: any;
+    manaCount: number; // crystals collected this session (0-10)
     expByChar: Record<string, number>; // characterId → total EXP earned
     crystalShardTex: any;
     pixi: { Application: any; Assets: any; AnimatedSprite: any; Graphics: any; Spritesheet: any; Text: any; Container: any; Sprite: any };
@@ -383,10 +384,9 @@ function BattleStage({
 
       // Mana count text (right of gauge) — shows first character's EXP
       const primaryChar = Object.keys(expByChar)[0] || "blue";
-      const primaryExp = expByChar[primaryChar] ?? 0;
       let manaCountText: any = null;
       if (manaTank) {
-        manaCountText = new Text(`EXP ${primaryExp}`, {
+        manaCountText = new Text("0/10", {
           fontFamily: dmgFont.style.fontFamily,
           fontSize: 16,
           fill: 0x88ccff,
@@ -396,15 +396,17 @@ function BattleStage({
         manaCountText.position.set(85, 65);
         manaCountText.zIndex = 9999;
         uiApp.stage.addChild(manaCountText);
-        // Map EXP to mana tank frame (0 at 0 EXP, maxFrame at ~2000 EXP)
+        // Map first character's EXP to mana tank frame (0→2000 fills 0→maxFrame)
+        const topChar = Object.keys(expByChar)[0];
+        const firstExp = topChar ? (expByChar[topChar] ?? 0) : 0;
         const totalFrames = manaFrames?.length ?? 107;
         const maxExp = 2000;
-        const frame = Math.min(totalFrames - 1, Math.floor((primaryExp / maxExp) * totalFrames));
+        const frame = Math.min(totalFrames - 1, Math.floor((firstExp / maxExp) * totalFrames));
         manaTank.currentFrame = Math.max(0, frame);
       }
 
       // Store in ref for Effect 2
-      pixiCtx.current = { gameplayApp, uiApp, manaTank, manaCountText, expByChar, crystalShardTex, pixi };
+      pixiCtx.current = { gameplayApp, uiApp, manaTank, manaCountText, manaCount: 0, expByChar, crystalShardTex, pixi };
       setPixiReady(true);
     }
 
@@ -438,6 +440,9 @@ function BattleStage({
       const manaTank = ctx!.manaTank;
       const manaCountText = ctx!.manaCountText;
       const crystalShardTex = ctx!.crystalShardTex;
+      // Reset mana count for this battle
+      ctx!.manaCount = 0;
+      if (manaCountText) manaCountText.text = "0/10";
 
       const catalog: any[] = config.animations ?? [];
       const framesByKey: Record<string, any[]> = {};
@@ -1223,6 +1228,9 @@ function BattleStage({
       async function spawnCrystalShard(x: number, y: number, myId: number) {
         if (!crystalShardTex) return;
         playSound("audio/crystal-absorb.wav", 2);
+        // Increment mana count (visual counter, not synced to gauge frame)
+        ctx!.manaCount = Math.min(10, (ctx!.manaCount ?? 0) + 1);
+        if (manaCountText) manaCountText.text = `${ctx!.manaCount}/10`;
 
         const shard = new Sprite(crystalShardTex);
         shard.anchor.set(0.5);
@@ -1430,7 +1438,6 @@ function BattleStage({
             const maxExp = 2000;
             const frame = Math.min(totalFrames - 1, Math.floor((primaryExp / maxExp) * totalFrames));
             if (ctx!.manaTank) ctx!.manaTank.currentFrame = Math.max(0, frame);
-            if (manaCountText) manaCountText.text = `EXP ${primaryExp}`;
           }
         }
         onEnd(result.result);
