@@ -396,13 +396,8 @@ function BattleStage({
         manaCountText.position.set(85, 65);
         manaCountText.zIndex = 9999;
         uiApp.stage.addChild(manaCountText);
-        // Map first character's EXP to mana tank frame (0→2000 fills 0→maxFrame)
-        const topChar = Object.keys(expByChar)[0];
-        const firstExp = topChar ? (expByChar[topChar] ?? 0) : 0;
-        const totalFrames = manaFrames?.length ?? 107;
-        const maxExp = 2000;
-        const frame = Math.min(totalFrames - 1, Math.floor((firstExp / maxExp) * totalFrames));
-        manaTank.currentFrame = Math.max(0, frame);
+        // Mana tank starts empty (frame 0); updated by manaCount in spawnCrystalShard
+        manaTank.currentFrame = 0;
       }
 
       // Store in ref for Effect 2
@@ -609,6 +604,8 @@ function BattleStage({
       // foreshorten (no shear) and read as upright billboards.
       const viewport = new Container();
       pixiApp.stage.addChild(viewport);
+      // Destroy old viewport on re-fight (clears all previous units/board)
+      cleanups.push(() => { try { pixiApp.stage.removeChild(viewport); viewport.destroy({ children: true }); } catch {} });
       const board = new Container();
       viewport.addChild(board);
       const sprites: Record<string, SpriteUnit> = {};
@@ -1228,6 +1225,10 @@ function BattleStage({
         // Increment mana count (visual counter, not synced to gauge frame)
         ctx!.manaCount = Math.min(10, (ctx!.manaCount ?? 0) + 1);
         if (manaCountText) manaCountText.text = `${ctx!.manaCount}/10`;
+        // Snap mana tank frame to crystal count
+        const MANA_FRAMES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 107];
+        const idx = Math.min(ctx!.manaCount - 1, MANA_FRAMES.length - 1);
+        if (ctx!.manaTank) ctx!.manaTank.currentFrame = Math.min(107, MANA_FRAMES[idx]);
 
         const shard = new Sprite(crystalShardTex);
         shard.anchor.set(0.5);
@@ -1430,7 +1431,7 @@ function BattleStage({
             if (!deadCharIds.has(charId)) {
               ctx!.expByChar[charId] = (ctx!.expByChar[charId] ?? 0) + exp;
             }
-          }
+            }
             // Persist per-character EXP to server
             if (userId) {
               for (const [charId, exp] of Object.entries(ctx!.expByChar)) {
@@ -1441,13 +1442,6 @@ function BattleStage({
                 }).catch(() => {});
               }
             }
-            // Update mana tank from primary character's EXP
-            const primaryChar = Object.keys(ctx!.expByChar)[0] || "blue";
-            const primaryExp = ctx!.expByChar[primaryChar] ?? 0;
-            const totalFrames = ctx!.manaTank?._textures?.length ?? 107;
-            const maxExp = 2000;
-            const frame = Math.min(totalFrames - 1, Math.floor((primaryExp / maxExp) * totalFrames));
-            if (ctx!.manaTank) ctx!.manaTank.currentFrame = Math.max(0, frame);
         }
         onEnd(result.result);
       }
