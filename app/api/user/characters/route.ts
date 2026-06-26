@@ -52,13 +52,19 @@ export async function POST(req: NextRequest) {
     const setFields: Record<string, unknown> = {};
     if (typeof exp === "number") setFields.exp = exp;
     if (typeof level === "number") setFields.level = level;
-    await db
+    const baseInsert = db
       .insert(schema.userCharacters)
-      .values({ userId, characterId, level: level ?? 1, exp: exp ?? 0, hp: 200, attack: 20, defense: 0, actionSpeed: 100, range: 1 })
-      .onConflictDoUpdate({
+      .values({ userId, characterId, level: level ?? 1, exp: exp ?? 0, hp: 200, attack: 20, defense: 0, actionSpeed: 100, range: 1 });
+    if (Object.keys(setFields).length > 0) {
+      await baseInsert.onConflictDoUpdate({
         target: [schema.userCharacters.userId, schema.userCharacters.characterId],
         set: setFields as any,
       });
+    } else {
+      // Nothing to update (e.g. saving only spellHpThreshold) — ensure the row
+      // exists but never run an empty SET (Drizzle throws "No values to set").
+      await baseInsert.onConflictDoNothing();
+    }
     // Optional spellHpThreshold update (never resets is_dead)
     if (typeof spellHpThreshold === "number") {
       await setSpellHpThreshold(userId, characterId, spellHpThreshold);
