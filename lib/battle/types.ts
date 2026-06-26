@@ -93,6 +93,7 @@ export type CampaignDef = {
   monsterPool: string[]; // character ids enemies are spawned from across the waves
   isActive: boolean; // exactly one campaign is active at a time
   spawnCount?: number; // how many extra enemies can spawn mid-wave (0 = none)
+  difficulty?: number; // 1=easy, 2=normal, 3=hard
 };
 
 export const CAMPAIGN_BOUNDS = {

@@ -1,0 +1,1 @@
+ALTER TABLE "campaigns" ADD COLUMN "difficulty" integer DEFAULT 1 NOT NULL;

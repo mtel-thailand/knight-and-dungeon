@@ -226,7 +226,7 @@ export async function listCampaigns(): Promise<CampaignDef[]> {
   const rows = await db
     .select()
     .from(schema.campaigns)
-    .orderBy(schema.campaigns.name, schema.campaigns.id);
+    .orderBy(schema.campaigns.difficulty, schema.campaigns.name, schema.campaigns.id);
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -234,6 +234,7 @@ export async function listCampaigns(): Promise<CampaignDef[]> {
     monsterPool: parseMonsterPool(r.monsterPool),
     isActive: !!r.isActive,
     spawnCount: r.spawnCount,
+    difficulty: r.difficulty,
   }));
 }
 
@@ -678,6 +679,7 @@ export async function upsertCampaign(c: {
   waveCount: number;
   monsterPool: string[];
   spawnCount?: number;
+  difficulty?: number;
 }): Promise<void> {
   const db = getDb();
   const waveCount = Math.min(50, Math.max(1, Math.floor(Number(c.waveCount) || 1)));
@@ -687,9 +689,10 @@ export async function upsertCampaign(c: {
       : [],
   );
   const spawnCount = Math.max(0, Math.min(20, Math.floor(Number(c.spawnCount) || 0)));
+  const difficulty = Math.max(1, Math.min(3, Math.floor(Number(c.difficulty) || 1)));
   await db
     .insert(schema.campaigns)
-    .values({ id: c.id, name: c.name, waveCount, monsterPool, spawnCount })
+    .values({ id: c.id, name: c.name, waveCount, monsterPool, spawnCount, difficulty })
     .onConflictDoUpdate({
       target: schema.campaigns.id,
       set: {
@@ -697,6 +700,7 @@ export async function upsertCampaign(c: {
         waveCount: sql`excluded.wave_count`,
         monsterPool: sql`excluded.monster_pool`,
         spawnCount: sql`excluded.spawn_count`,
+        difficulty: sql`excluded.difficulty`,
       },
     });
 }

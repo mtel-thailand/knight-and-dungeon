@@ -24,10 +24,10 @@ const STATS: Record<string, { hp: number; attack: number; defense: number; actio
 // =============================================================================
 interface Wave { enemies: string[]; spawnCount: number }
 
-const CAMPAIGNS: { id: string; name: string; slots: number; waves: Wave[] }[] = [
+const CAMPAIGNS: { id: string; name: string; difficulty: number; slots: number; waves: Wave[] }[] = [
   {
-    // Easy: 1 hero, ~73% win rate
-    id: "camp-easy", name: "Rat Infestation", slots: 1,
+    id: "camp-easy", name: "The Rat Warrens", difficulty: 1, slots: 1,
+    // 1 hero, ~73% win rate
     waves: [
       { enemies: ["big-green"],                          spawnCount: 0 },
       { enemies: ["big-green"],                          spawnCount: 0 },
@@ -35,8 +35,8 @@ const CAMPAIGNS: { id: string; name: string; slots: number; waves: Wave[] }[] = 
     ],
   },
   {
-    // Normal: 2 heroes, ~50% win rate
-    id: "camp-normal", name: "Goblin Raid", slots: 2,
+    id: "camp-normal", name: "The Goblin Tunnels", difficulty: 2, slots: 2,
+    // 2 heroes, ~50% win rate
     waves: [
       { enemies: ["big-green", "little-green", "little-green"],     spawnCount: 2 },
       { enemies: ["big-green", "little-green"],                     spawnCount: 2 },
@@ -44,8 +44,8 @@ const CAMPAIGNS: { id: string; name: string; slots: number; waves: Wave[] }[] = 
     ],
   },
   {
-    // Hard: 3 heroes, ~4% win rate
-    id: "camp-hard", name: "Dark Legion", slots: 3,
+    id: "camp-hard", name: "The Dark Bastille", difficulty: 3, slots: 3,
+    // 3 heroes, ~4% win rate
     waves: [
       { enemies: ["big-green", "big-green"],                        spawnCount: 2 },
       { enemies: ["big-green", "big-green"],                        spawnCount: 3 },
@@ -69,7 +69,7 @@ async function main() {
   for (const c of CAMPAIGNS) {
     const pool = [...new Set(c.waves.flatMap((w) => w.enemies))];
     const maxSpawn = Math.max(...c.waves.map((w) => w.spawnCount));
-    await upsertCampaign({ id: c.id, name: c.name, waveCount: c.waves.length, monsterPool: pool, spawnCount: maxSpawn, });
+    await upsertCampaign({ id: c.id, name: c.name, waveCount: c.waves.length, monsterPool: pool, spawnCount: maxSpawn, difficulty: c.difficulty });
     console.log(`Campaign "${c.id}": ${c.waves.length} waves, maxSpawn=${maxSpawn}, pool=[${pool.join(",")}]`);
   }
 

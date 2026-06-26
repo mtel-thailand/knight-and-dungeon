@@ -153,6 +153,7 @@ export const campaigns = pgTable(
     monsterPool: text("monster_pool").notNull().default("[]"),
     isActive: integer("is_active").notNull().default(0),
     spawnCount: integer("spawn_count").notNull().default(0),
+    difficulty: integer("difficulty").notNull().default(1),
   },
 );
 

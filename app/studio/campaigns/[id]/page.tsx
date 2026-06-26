@@ -213,6 +213,19 @@ export default function CampaignEditPage() {
               </p>
             </label>
 
+            <label className="campaign-field">
+              <span className="campaign-field-label">Difficulty</span>
+              <select
+                className="campaign-input"
+                value={campaign.difficulty ?? 1}
+                onChange={(e) => update("difficulty", parseInt(e.target.value, 10))}
+              >
+                <option value={1}>1 — Easy</option>
+                <option value={2}>2 — Normal</option>
+                <option value={3}>3 — Hard</option>
+              </select>
+            </label>
+
             <div className="campaign-field">
               <span className="campaign-field-label">
                 Monster pool ({campaign.monsterPool.length} selected)

@@ -80,6 +80,10 @@ export async function POST(req: NextRequest) {
       typeof campaign.spawnCount === "number"
         ? Math.max(0, Math.min(20, Math.floor(campaign.spawnCount)))
         : undefined,
+    difficulty:
+      typeof campaign.difficulty === "number"
+        ? Math.max(1, Math.min(3, Math.floor(campaign.difficulty)))
+        : undefined,
   });
 
   return NextResponse.json({ ok: true });

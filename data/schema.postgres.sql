@@ -91,7 +91,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     wave_count   INTEGER NOT NULL DEFAULT 1,
     monster_pool TEXT NOT NULL DEFAULT '[]',
     is_active    INTEGER NOT NULL DEFAULT 0,
-    spawn_count  INTEGER NOT NULL DEFAULT 0
+    spawn_count  INTEGER NOT NULL DEFAULT 0,
+    difficulty   INTEGER NOT NULL DEFAULT 1
 );
 
 -- Campaigns: single active constraint removed — all 3 campaigns are playable
