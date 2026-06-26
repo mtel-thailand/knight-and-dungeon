@@ -6,10 +6,10 @@
 // → POST /api/config/campaign { campaign }. Activation is separate: "Set as
 // active" button → POST /api/config/campaign { activeId }. Missing id is handled.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import type { CampaignDef } from "@/lib/battle/types";
+import type { CampaignDef, WaveDef, WaveEnemyGroup } from "@/lib/battle/types";
 import { CAMPAIGN_BOUNDS } from "@/lib/battle/types";
 import type { BootstrapPayload } from "../../studioTypes";
 import { CAMPAIGNS_PAGE_CSS } from "../campaignsStyles";
@@ -248,6 +248,172 @@ export default function CampaignEditPage() {
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* ── Wave editor ──────────────────────────────────────────── */}
+            <div className="campaign-field">
+              <span className="campaign-field-label">Waves</span>
+              <p className="campaign-hint">
+                Each wave defines initial enemies and mid-fight spawns per character type.
+                Max 5 enemies on board at once.
+              </p>
+
+              <div className="campaign-waves">
+                {(campaign.waves ?? []).map((wave, wi) => (
+                  <div key={wi} className="campaign-wave-card">
+                    <div className="campaign-wave-header">
+                      <strong>Wave {wi + 1}</strong>
+                      <button
+                        className="campaign-btn small danger"
+                        type="button"
+                        onClick={() => {
+                          const w = [...(campaign.waves ?? [])];
+                          w.splice(wi, 1);
+                          update("waves", w);
+                          update("waveCount", w.length);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    {/* Initial enemies */}
+                    <div className="campaign-wave-section">
+                      <span className="campaign-wave-label">Initial enemies</span>
+                      {wave.initial.map((grp, gi) => (
+                        <div key={gi} className="campaign-wave-group">
+                          <select
+                            className="campaign-input small"
+                            value={grp.characterId}
+                            onChange={(e) => {
+                              const w = [...(campaign.waves ?? [])];
+                              w[wi].initial[gi].characterId = e.target.value;
+                              update("waves", w);
+                            }}
+                          >
+                            {characters.map((ch) => (
+                              <option key={ch.id} value={ch.id}>{ch.name || ch.id}</option>
+                            ))}
+                          </select>
+                          <input
+                            className="campaign-input small"
+                            type="number"
+                            min={1}
+                            max={5}
+                            value={grp.count}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              if (!isNaN(v) && v >= 1 && v <= 5) {
+                                const w = [...(campaign.waves ?? [])];
+                                w[wi].initial[gi].count = v;
+                                update("waves", w);
+                              }
+                            }}
+                          />
+                          <button
+                            className="campaign-btn small"
+                            type="button"
+                            onClick={() => {
+                              const w = [...(campaign.waves ?? [])];
+                              w[wi].initial.splice(gi, 1);
+                              update("waves", w);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        className="campaign-btn small"
+                        type="button"
+                        onClick={() => {
+                          const w = [...(campaign.waves ?? [])];
+                          w[wi].initial.push({ characterId: characters[0]?.id ?? "", count: 1 });
+                          update("waves", w);
+                        }}
+                        disabled={wave.initial.reduce((s, g) => s + g.count, 0) >= 5}
+                      >
+                        + Add enemy type
+                      </button>
+                    </div>
+
+                    {/* Spawning enemies */}
+                    <div className="campaign-wave-section">
+                      <span className="campaign-wave-label">Mid-fight spawns</span>
+                      {wave.spawns.map((grp, gi) => (
+                        <div key={gi} className="campaign-wave-group">
+                          <select
+                            className="campaign-input small"
+                            value={grp.characterId}
+                            onChange={(e) => {
+                              const w = [...(campaign.waves ?? [])];
+                              w[wi].spawns[gi].characterId = e.target.value;
+                              update("waves", w);
+                            }}
+                          >
+                            {characters.map((ch) => (
+                              <option key={ch.id} value={ch.id}>{ch.name || ch.id}</option>
+                            ))}
+                          </select>
+                          <input
+                            className="campaign-input small"
+                            type="number"
+                            min={1}
+                            max={10}
+                            value={grp.count}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              if (!isNaN(v) && v >= 1 && v <= 10) {
+                                const w = [...(campaign.waves ?? [])];
+                                w[wi].spawns[gi].count = v;
+                                update("waves", w);
+                              }
+                            }}
+                          />
+                          <button
+                            className="campaign-btn small"
+                            type="button"
+                            onClick={() => {
+                              const w = [...(campaign.waves ?? [])];
+                              w[wi].spawns.splice(gi, 1);
+                              update("waves", w);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        className="campaign-btn small"
+                        type="button"
+                        onClick={() => {
+                          const w = [...(campaign.waves ?? [])];
+                          w[wi].spawns.push({ characterId: characters[0]?.id ?? "", count: 1 });
+                          update("waves", w);
+                        }}
+                      >
+                        + Add spawn type
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                className="campaign-btn"
+                type="button"
+                onClick={() => {
+                  const w = [...(campaign.waves ?? [])];
+                  w.push({
+                    initial: [{ characterId: characters[0]?.id ?? "", count: 1 }],
+                    spawns: [],
+                  });
+                  update("waves", w);
+                  update("waveCount", w.length);
+                }}
+              >
+                + Add wave
+              </button>
             </div>
 
             <div className="campaign-field">

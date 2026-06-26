@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
       typeof campaign.difficulty === "number"
         ? Math.max(1, Math.min(3, Math.floor(campaign.difficulty)))
         : undefined,
+    waves: Array.isArray(campaign.waves) ? campaign.waves : undefined,
   });
 
   return NextResponse.json({ ok: true });

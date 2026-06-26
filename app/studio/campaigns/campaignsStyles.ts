@@ -95,4 +95,12 @@ export const CAMPAIGNS_PAGE_CSS = `
   .campaigns-page .reward-editor-list { display: flex; flex-direction: column; gap: 10px; }
   .campaigns-page .reward-editor-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: rgba(255,255,255,0.03); }
   .campaigns-page .reward-editor-row { display: grid; grid-template-columns: 1fr 1fr 110px auto; gap: 8px; }
+  .campaigns-page .campaign-waves { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+  .campaigns-page .campaign-wave-card { padding: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; background: rgba(255,255,255,0.03); }
+  .campaigns-page .campaign-wave-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .campaigns-page .campaign-wave-section { margin-bottom: 8px; }
+  .campaigns-page .campaign-wave-label { display: block; font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.4); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .campaigns-page .campaign-wave-group { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+  .campaigns-page .campaign-input.small { width: auto; min-width: 60px; padding: 4px 8px; font-size: 12px; }
+  .campaigns-page .campaign-btn.small { padding: 4px 10px; font-size: 11px; }
 `; 

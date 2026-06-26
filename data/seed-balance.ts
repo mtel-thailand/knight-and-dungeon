@@ -3,11 +3,8 @@
  *
  * Run: DATABASE_URL=... npx tsx data/seed-balance.ts
  */
-import {
-  upsertBattleStats, upsertRoleMap, pruneBattleData,
-  upsertCampaign, setActiveCampaign,
-} from "../lib/db/adapter";
-import type { AttackType } from "../lib/battle/types";
+import { upsertBattleStats, upsertRoleMap, pruneBattleData, upsertCampaign, setActiveCampaign } from "../lib/db/adapter";
+import type { AttackType, WaveDef } from "../lib/battle/types";
 
 // =============================================================================
 // FINAL CALIBRATED STATS (verified with 1000-run simulations)
@@ -22,34 +19,30 @@ const STATS: Record<string, { hp: number; attack: number; defense: number; actio
 // =============================================================================
 // CAMPAIGNS — verified wave compositions
 // =============================================================================
-interface Wave { enemies: string[]; spawnCount: number }
 
-const CAMPAIGNS: { id: string; name: string; difficulty: number; slots: number; waves: Wave[] }[] = [
+const CAMPAIGNS: { id: string; name: string; difficulty: number; waves: WaveDef[] }[] = [
   {
-    id: "camp-easy", name: "The Rat Warrens", difficulty: 1, slots: 1,
-    // Tutorial — always winnable. Introduces spawn mechanic on wave 2.
+    id: "camp-easy", name: "The Rat Warrens", difficulty: 1,
     waves: [
-      { enemies: ["little-green", "little-green"],                          spawnCount: 0 },
-      { enemies: ["little-green", "little-green", "little-green"],          spawnCount: 1 },
-      { enemies: ["little-green", "little-green", "little-green", "little-green"], spawnCount: 2 },
+      { initial: [{ characterId: "little-green", count: 2 }], spawns: [] },
+      { initial: [{ characterId: "little-green", count: 3 }], spawns: [{ characterId: "little-green", count: 1 }] },
+      { initial: [{ characterId: "little-green", count: 4 }], spawns: [{ characterId: "little-green", count: 2 }] },
     ],
   },
   {
-    id: "camp-normal", name: "The Goblin Tunnels", difficulty: 2, slots: 1,
-    // 1 hero
+    id: "camp-normal", name: "The Goblin Tunnels", difficulty: 2,
     waves: [
-      { enemies: ["big-green", "little-green", "little-green"],     spawnCount: 2 },
-      { enemies: ["big-green", "little-green"],                     spawnCount: 2 },
-      { enemies: ["big-green", "big-green", "big-green"],           spawnCount: 3 },
+      { initial: [{ characterId: "big-green", count: 1 }, { characterId: "little-green", count: 2 }], spawns: [{ characterId: "little-green", count: 2 }] },
+      { initial: [{ characterId: "big-green", count: 1 }, { characterId: "little-green", count: 1 }], spawns: [{ characterId: "little-green", count: 2 }] },
+      { initial: [{ characterId: "big-green", count: 3 }], spawns: [{ characterId: "little-green", count: 3 }] },
     ],
   },
   {
-    id: "camp-hard", name: "The Dark Bastille", difficulty: 3, slots: 1,
-    // 1 hero
+    id: "camp-hard", name: "The Dark Bastille", difficulty: 3,
     waves: [
-      { enemies: ["big-green", "big-green"],                        spawnCount: 2 },
-      { enemies: ["big-green", "big-green"],                        spawnCount: 3 },
-      { enemies: ["big-green", "big-green", "big-green"],           spawnCount: 4 },
+      { initial: [{ characterId: "big-green", count: 2 }], spawns: [{ characterId: "big-green", count: 2 }] },
+      { initial: [{ characterId: "big-green", count: 2 }], spawns: [{ characterId: "big-green", count: 3 }] },
+      { initial: [{ characterId: "big-green", count: 3 }], spawns: [{ characterId: "big-green", count: 4 }] },
     ],
   },
 ];
@@ -67,9 +60,9 @@ async function main() {
 
   // Seed campaigns
   for (const c of CAMPAIGNS) {
-    const pool = [...new Set(c.waves.flatMap((w) => w.enemies))];
-    const maxSpawn = Math.max(...c.waves.map((w) => w.spawnCount));
-    await upsertCampaign({ id: c.id, name: c.name, waveCount: c.waves.length, monsterPool: pool, spawnCount: maxSpawn, difficulty: c.difficulty });
+    const pool = [...new Set(c.waves.flatMap((w) => [...w.initial, ...w.spawns].map((g) => g.characterId)))];
+    const maxSpawn = Math.max(...c.waves.map((w) => w.spawns.reduce((s, g) => s + g.count, 0)));
+    await upsertCampaign({ id: c.id, name: c.name, waveCount: c.waves.length, monsterPool: pool, spawnCount: maxSpawn, difficulty: c.difficulty, waves: c.waves });
     console.log(`Campaign "${c.id}": ${c.waves.length} waves, maxSpawn=${maxSpawn}, pool=[${pool.join(",")}]`);
   }
 

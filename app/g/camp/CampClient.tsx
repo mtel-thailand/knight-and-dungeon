@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type {
   CampaignDef,
+  WaveDef,
   PartyMemberInput,
   ResolveRequest,
   ResolveResult,
@@ -356,8 +357,10 @@ export default function CampClient() {
 
   const guardMessage = ((): string | null => {
     if (!activeCampaign) return "No active campaign. Create one in the Campaigns page first.";
-    if (!Array.isArray(activeCampaign.monsterPool) || activeCampaign.monsterPool.length === 0) {
-      return "The active campaign has no monsters in its pool.";
+    const hasWaves = Array.isArray(activeCampaign.waves) && activeCampaign.waves.length > 0;
+    const hasPool = Array.isArray(activeCampaign.monsterPool) && activeCampaign.monsterPool.length > 0;
+    if (!hasWaves && !hasPool) {
+      return "The active campaign has no monsters configured.";
     }
     if (playerParty.length === 0) return "No playable characters with battle stats.";
     return null;
@@ -370,24 +373,48 @@ export default function CampClient() {
     const cfg = configRef.current;
     if (!cfg || !camp) return "No active campaign";
 
-    const count = Math.min(k, BOARD.maxPerSide);
-    const pool = camp.monsterPool;
-    const enemies: PartyMemberInput[] = [];
-    for (let i = 0; i < count; i++) {
-      const charId = pool[i % pool.length];
-      const statsRaw = cfg.battleStats?.[charId];
-      if (!statsRaw) continue; // skip characters without battle stats
-      enemies.push({
-        characterId: charId,
-        stats: { ...statsRaw, attackType: statsRaw.attackType ?? "melee", skills: statsRaw.skills ?? [] },
-        spells: spellsFor(charId, cfg),
-        position: deployHex("enemy", i),
-      });
+    let enemies: PartyMemberInput[] = [];
+    let spawnCount = camp.spawnCount ?? 0;
+
+    // Use structured wave definitions when available
+    const waveDef = camp.waves?.[k - 1];
+    if (waveDef) {
+      let slot = 0;
+      for (const group of waveDef.initial) {
+        for (let i = 0; i < group.count && slot < BOARD.maxPerSide; i++, slot++) {
+          const statsRaw = cfg.battleStats?.[group.characterId];
+          if (!statsRaw) continue;
+          enemies.push({
+            characterId: group.characterId,
+            stats: { ...statsRaw, attackType: statsRaw.attackType ?? "melee", skills: statsRaw.skills ?? [] },
+            spells: spellsFor(group.characterId, cfg),
+            position: deployHex("enemy", slot),
+          });
+        }
+      }
+      // Compute spawn count from the sum of spawn group counts
+      spawnCount = waveDef.spawns.reduce((sum, g) => sum + g.count, 0);
+    } else {
+      // Fallback: legacy pool cycling
+      const count = Math.min(k, BOARD.maxPerSide);
+      const pool = camp.monsterPool;
+      for (let i = 0; i < count; i++) {
+        const charId = pool[i % pool.length];
+        const statsRaw = cfg.battleStats?.[charId];
+        if (!statsRaw) continue;
+        enemies.push({
+          characterId: charId,
+          stats: { ...statsRaw, attackType: statsRaw.attackType ?? "melee", skills: statsRaw.skills ?? [] },
+          spells: spellsFor(charId, cfg),
+          position: deployHex("enemy", i),
+        });
+      }
     }
+
     if (enemies.length === 0) return "No valid enemy characters in monster pool (all missing battle stats).";
 
     const req: ResolveRequest = {
-      players: party, enemies, spawnCount: camp.spawnCount ?? 0,
+      players: party, enemies, spawnCount,
       userId, campaignId: camp.id, waveIndex: k,
     };
     const outcome = await requestResolve(req);

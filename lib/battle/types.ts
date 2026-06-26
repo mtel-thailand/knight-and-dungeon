@@ -83,17 +83,31 @@ export const SPELL_FADE_MS = 140; // projectile transition-in/out alpha fade dur
 // ---- Campaigns (CMS-managed; the /camp consecutive-wave runner config) ----
 // CMS entity, persisted in `campaigns`, surfaced in GET /api/config as `campaigns`.
 // Sim-inert: a campaign NEVER enters the engine or the resolve payload — it only
-// configures how the (future) /camp screen spawns successive waves. Exactly one
-// campaign may be active at a time (enforced by a partial unique index in db.ts:
-// `CREATE UNIQUE INDEX ... ON campaigns(is_active) WHERE is_active = 1`).
+// configures how the /camp screen spawns successive waves.
+
+export type WaveEnemyGroup = {
+  characterId: string;
+  /** Number of this enemy type in the initial deployment. */
+  count: number;
+};
+
+export type WaveDef = {
+  /** Enemy types and counts deployed when the wave starts. Total ≤ 5. */
+  initial: WaveEnemyGroup[];
+  /** Enemy types and counts that can spawn mid-wave (max 5 on board at any time). */
+  spawns: WaveEnemyGroup[];
+};
+
 export type CampaignDef = {
   id: string;
   name: string;
   waveCount: number; // number of consecutive waves (>= 1)
   monsterPool: string[]; // character ids enemies are spawned from across the waves
-  isActive: boolean; // exactly one campaign is active at a time
+  isActive: boolean;
   spawnCount?: number; // how many extra enemies can spawn mid-wave (0 = none)
   difficulty?: number; // 1=easy, 2=normal, 3=hard
+  /** Structured wave definitions. When present, overrides waveCount/spawnCount/monsterPool. */
+  waves?: WaveDef[];
 };
 
 export const CAMPAIGN_BOUNDS = {
