@@ -36,7 +36,7 @@ export default function CampaignListPage() {
   }, []);
 
   function startCampaign(c: Campaign) {
-    router.push(`/g/camp`);
+    router.push(`/g/camp?id=${encodeURIComponent(c.id)}`);
   }
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type {
   CampaignDef,
   PartyMemberInput,
@@ -284,6 +285,8 @@ export default function CampClient() {
   }
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
+  const searchParams = useSearchParams();
+  const urlCampaignId = searchParams?.get("id");
 
   useEffect(() => {
     let cancelled = false;
@@ -295,10 +298,11 @@ export default function CampClient() {
         const cfg = normalizeConfig(data);
         setConfig(cfg);
 
+        const campaigns = Array.isArray(data?.campaigns) ? data.campaigns : [];
         const camp: CampaignDef | null =
-          (Array.isArray(data?.campaigns)
-            ? data.campaigns.find((c: CampaignDef) => c.isActive)
-            : null) ?? null;
+          (urlCampaignId
+            ? campaigns.find((c: CampaignDef) => c.id === urlCampaignId)
+            : campaigns.find((c: CampaignDef) => c.isActive)) ?? null;
         setActiveCampaign(camp);
 
         // Build initial player party from selected characters
