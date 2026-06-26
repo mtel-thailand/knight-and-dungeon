@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS campaigns (
     name         TEXT NOT NULL,
     wave_count   INTEGER NOT NULL DEFAULT 1,
     monster_pool TEXT NOT NULL DEFAULT '[]',
-    is_active    INTEGER NOT NULL DEFAULT 0
+    is_active    INTEGER NOT NULL DEFAULT 0,
+    spawn_count  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_one_active

@@ -76,6 +76,10 @@ export async function POST(req: NextRequest) {
     name: campaign.name,
     waveCount,
     monsterPool,
+    spawnCount:
+      typeof campaign.spawnCount === "number"
+        ? Math.max(0, Math.min(20, Math.floor(campaign.spawnCount)))
+        : undefined,
   });
 
   return NextResponse.json({ ok: true });

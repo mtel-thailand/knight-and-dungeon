@@ -233,6 +233,7 @@ export async function listCampaigns(): Promise<CampaignDef[]> {
     waveCount: r.waveCount,
     monsterPool: parseMonsterPool(r.monsterPool),
     isActive: !!r.isActive,
+    spawnCount: r.spawnCount,
   }));
 }
 
@@ -676,6 +677,7 @@ export async function upsertCampaign(c: {
   name: string;
   waveCount: number;
   monsterPool: string[];
+  spawnCount?: number;
 }): Promise<void> {
   const db = getDb();
   const waveCount = Math.min(50, Math.max(1, Math.floor(Number(c.waveCount) || 1)));
@@ -684,15 +686,17 @@ export async function upsertCampaign(c: {
       ? c.monsterPool.filter((x) => typeof x === "string")
       : [],
   );
+  const spawnCount = Math.max(0, Math.min(20, Math.floor(Number(c.spawnCount) || 0)));
   await db
     .insert(schema.campaigns)
-    .values({ id: c.id, name: c.name, waveCount, monsterPool })
+    .values({ id: c.id, name: c.name, waveCount, monsterPool, spawnCount })
     .onConflictDoUpdate({
       target: schema.campaigns.id,
       set: {
         name: sql`excluded.name`,
         waveCount: sql`excluded.wave_count`,
         monsterPool: sql`excluded.monster_pool`,
+        spawnCount: sql`excluded.spawn_count`,
       },
     });
 }

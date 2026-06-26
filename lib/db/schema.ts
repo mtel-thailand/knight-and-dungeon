@@ -153,6 +153,7 @@ export const campaigns = pgTable(
     waveCount: integer("wave_count").notNull().default(1),
     monsterPool: text("monster_pool").notNull().default("[]"),
     isActive: integer("is_active").notNull().default(0),
+    spawnCount: integer("spawn_count").notNull().default(0),
   },
   (t) => [
     uniqueIndex("idx_campaigns_one_active")
