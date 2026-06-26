@@ -912,7 +912,7 @@ function BattleStage({
             fontFamily: dmgFont.style.fontFamily,
             fontSize: (kind === "skill" ? cfg.sizeSkill : cfg.sizeNormal) * TW0,
             fontWeight: "400",
-            fill: kind === "skill" ? 0xffd36b : 0xffffff,
+            fill: isHeal ? 0x57e08a : kind === "skill" ? 0xffd36b : 0xffffff,
             stroke: { color: 0x05070b, width: cfg.stroke * pxScale },
           },
         });
