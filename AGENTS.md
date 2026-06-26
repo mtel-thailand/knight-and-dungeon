@@ -31,15 +31,22 @@ Deep-dive battle docs live with module G (`MOCK_BATTLE.md`, `MOCK_BATTLE_PLAN.md
   declares `{duration, loop, alpha, rotation}` in `studioTypes.ts`, resolving the old
   `animations[].config` errors.) Keep it clean and don't regress.
 - Python pipeline needs **`ffmpeg` + `ffprobe` on PATH**. Next 15 needs Node 18.18+.
+- **Migrations:** after schema changes, `npx drizzle-kit generate` then `npx drizzle-kit migrate`.
+  Migration files live in `drizzle/`, tracked in `drizzle/meta/_journal.json`.
 
 ## Persistence — Postgres via Drizzle ORM
 
 The live studio persists state through `GET/POST /api/config`, which
 delegates to **`lib/db/adapter.ts`** — a Drizzle ORM adapter querying a Postgres
-database (`DATABASE_URL` env var). Fourteen tables are defined in `lib/db/schema.ts`:
+database (`DATABASE_URL` env var). Sixteen tables are defined in `lib/db/schema.ts`:
 app_config, animations, character_animations, character_battle_stats,
 character_event_roles, battle_map_config, damage_config, spell_text_config,
-spells, campaigns, character_spells, mock_battle_roster, battle_rewards.
+spells, campaigns, character_spells, mock_battle_roster, battle_rewards,
+user_characters, user_stats, battle_logs.
+
+Schema changes: `npx drizzle-kit generate` → `npx drizzle-kit migrate`.
+Migration files live in `drizzle/`, tracked in `drizzle/meta/_journal.json`.
+For new DBs, `data/schema.postgres.sql` has the full DDL.
 
 Caution: any studio interaction POSTs the whole in-memory state back, overwriting manual edits to
 `app_config`.
@@ -148,8 +155,7 @@ Source MP4s live in `source/`. `python3 make_spritesheet.py` (bare PNG) and
 
 1. `python3 add_animation.py source/<clip>.mp4 <name> --assets-dir ./public/assets --no-inject`
 2. Register the animation in the **Postgres catalog** (`animations` + `character_animations` via
-   `db.ts` — no seeder exists, so insert directly or write one). The old "edit the `Assets.load`
-   list / `animations` array in `StudioClient.tsx`" step **no longer applies**.
+   the studio UI or a seeder script).
 
 Generated JSON keys frames as `<name_with_underscores>_<NNN>`; frames load by `Object.keys` order, so
 zero-padded ordering matters.

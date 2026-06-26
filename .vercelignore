@@ -4,10 +4,7 @@ node_modules
 .next
 .git
 
-# Local working SQLite DB + WAL — the DEPLOYED copy is data/seed/app.db (kept).
-data/app.db
-data/app.db-shm
-data/app.db-wal
+
 
 # Python pipeline inputs / scratch — never imported or served by the app.
 source

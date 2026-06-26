@@ -6,35 +6,39 @@
 - **npm** (bundled with Node)
 - **ffmpeg + ffprobe** on PATH (required for the MP4 → spritesheet Python pipeline)
 - **Python 3** (for `make_spritesheet.py` / `add_animation.py`)
-- **PostgreSQL** (optional — Vercel deploy uses bundled SQLite via `data/seed/app.db`)
+- **PostgreSQL** (local dev via docker-compose or hosted Neon)
 
-## Quick Start (Vercel-ready — no Postgres needed)
+## Quick Start
 
 ```bash
 # 1. Install dependencies
 npm install
 
-# 2. Copy environment template
-cp .env.example .env.local
+# 2. Start Postgres
+docker compose up -d
 
-# 3. Run the dev server (uses bundled SQLite seed)
+# 3. Apply schema + seed
+psql -h localhost -p 5433 -U postgres -d vid-to-sprite -f data/schema.postgres.sql
+npx tsx data/seed-battle.ts
+
+# 4. Run migrations
+npx drizzle-kit migrate
+
+# 5. Set environment
+export DATABASE_URL=postgres://postgres:postgres@localhost:5433/vid-to-sprite
+
+# 6. Start dev server
 npm run dev
 ```
-
-The app starts at `http://localhost:3000`. The bundled `data/seed/app.db` contains 53 animations, 11 battle stat configs, the "cave" campaign, and the "blue"/"blue-copy" characters. No Postgres required.
 
 ## Environment Variables
 
 Create `.env.local` (gitignored):
 
 ```env
-# ----- Database -----
-# Postgres (optional — omit to use the bundled SQLite seed instead)
-DATABASE_URL=postgres://user:pass@localhost:5433/vid-to-sprite
-DB_BACKEND=postgres
+DATABASE_URL=postgres://postgres:postgres@localhost:5433/vid-to-sprite
 
-# ----- Firebase (optional — for asset uploads in the studio) -----
-# Bucket must be provisioned (Blaze plan required)
+# Firebase (optional — for asset uploads in the studio)
 NEXT_PUBLIC_FIREBASE_API_KEY=...
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=...
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=knight-and-dungeon
@@ -45,54 +49,54 @@ NEXT_PUBLIC_FIREBASE_APP_ID=...
 
 ## Database
 
-### Option A: SQLite (default, no setup)
-
-The app ships with a pre-seeded SQLite database at `data/seed/app.db`. On cold start (Vercel), `db.ts` copies it to `/tmp`. This is the deploy source of truth.
-
-**Refresh the seed after CMS changes:**
-```bash
-sqlite3 data/app.db "VACUUM INTO 'data/seed/app.db'"
-```
-
-### Option B: PostgreSQL (local dev with Neon/self-hosted)
+### Local (docker-compose)
 
 ```bash
-# Start Postgres (docker-compose.yml uses port 5433)
-docker compose up -d
-
-# Apply schema
+docker compose up -d           # port 5433
 psql -h localhost -p 5433 -U postgres -d vid-to-sprite -f data/schema.postgres.sql
-
-# Set environment
-export DATABASE_URL=postgres://postgres:postgres@localhost:5433/vid-to-sprite
-export DB_BACKEND=postgres
+npx drizzle-kit migrate        # apply pending migrations
 ```
+
+### Hosted (Neon — Vercel-native)
+
+1. Create a Neon project, copy the pooler connection string
+2. Run `psql` against the Neon host with `data/schema.postgres.sql`
+3. Run `npx drizzle-kit migrate` against Neon
+4. Set `DATABASE_URL` to the pooler string in Vercel env vars
+
+## Migrations
+
+Migrations are managed with [Drizzle Kit](https://orm.drizzle.team/docs/kit-overview).
+
+```bash
+# Generate a new migration after schema changes
+npx drizzle-kit generate
+
+# Apply pending migrations
+npx drizzle-kit migrate
+```
+
+Migration files live in `drizzle/` and are tracked in `drizzle/meta/_journal.json`.
 
 ## Seed Data
 
 ```bash
-# Seed battle stats + role maps + rewards (run against Postgres)
+# Seed battle stats + role maps + rewards
 npx tsx data/seed-battle.ts
 ```
 
-The seed script is idempotent — safe to re-run.
+Idempotent — safe to re-run.
 
 ## Running
 
 ```bash
-# Dev server
 npm run dev
 
 # Type-check
 npx tsc --noEmit
 
-# Determinism test (engine must produce byte-identical results)
+# Determinism test
 npx tsx lib/battle/sanity.ts
-# Expected output:
-#   1v1: result=win events=11 units=2 hexes=29 deterministic=true
-#   3v3: result=win events=34 units=6 hexes=29 deterministic=true
-#   same-row: result=win events=9 units=2 hexes=29 deterministic=true
-#   spell: result=win events=7 units=2 hexes=29 deterministic=true
 ```
 
 ## Building
@@ -102,7 +106,7 @@ npm run build
 npm start
 ```
 
-**Caution:** Don't `npm run build` while a `next dev` is running — shared `.next/` can corrupt and return 500s.
+**Caution:** Don't `npm run build` while a `next dev` is running — shared `.next/` can corrupt.
 
 ## Deploy to Vercel
 
@@ -110,33 +114,17 @@ npm start
 npx vercel --prod
 ```
 
-The project is pre-linked (`vercel.json` + `.vercel/project.json`). No Postgres needed — the SQLite seed handles reads. Key `next.config.ts` ensures:
-- `better-sqlite3` is bundled via `serverExternalPackages`
-- The seed DB is copied to `/tmp` on cold start (`ON_VERCEL` branch)
-
-### Before deploying
-
-If you made CMS changes in the studio, refresh the seed:
-```bash
-sqlite3 data/app.db "VACUUM INTO 'data/seed/app.db'"
-git add data/seed/app.db
-git commit -m "refresh app.db seed"
-```
+The project is pre-linked (`.vercel/project.json`). Set `DATABASE_URL` to your Neon pooler string in Vercel project env vars.
 
 ## Adding an Animation (MP4 → Spritesheet)
 
 ```bash
-# 1. Convert MP4 to spritesheet PNG + JSON frame data
 python3 add_animation.py source/<clip>.mp4 <kebab-name> \
   --assets-dir ./public/assets \
   --no-inject
 
-# 2. Register the animation in the Postgres catalog
-#    (insert into `animations` + `character_animations` via the studio UI
-#     or write a seeder script)
+# Register the animation in the catalog via the studio UI
 ```
-
-The Python pipeline chromakeys green screen (default `0x04F108`), tiles frames at 160px per cell, 4 columns per row.
 
 ## Project Map
 
@@ -150,12 +138,14 @@ The Python pipeline chromakeys green screen (default `0x04F108`), tiles frames a
 | `app/auth/campaigns/` | User-facing campaign selection ("Quest Log") |
 | `lib/db/` | Drizzle ORM adapter (Postgres) |
 | `data/schema.postgres.sql` | Raw DDL for Postgres deployment |
-| `data/seed/app.db` | Bundled SQLite seed (deploy source of truth) |
+| `drizzle/` | Generated migration files |
+| `drizzle.config.ts` | Drizzle Kit config |
 
 ## Gotchas
 
-- **One `next dev` at a time** — two instances share `data/app.db` via separate Drizzle pool connections → inconsistent reads.
-- **Studio POSTs the whole state** — `POST /api/config` overwrites `app_config`. Re-run the VACUUM before deploy if you edited studio data.
+- **One `next dev` at a time** — two instances share the same Postgres pool → inconsistent reads.
+- **Studio POSTs the whole state** — `POST /api/config` overwrites `app_config`.
 - **Spell tables are empty** by default — combat is melee-only until spells are seeded.
 - **Firebase Storage bucket not provisioned** — asset upload code exists but won't work until the bucket is set up (Blaze plan required).
-- **Battle logs** are saved to `battle_logs` table (Postgres) or discarded (SQLite seed mode). Only the last 10 per user are retained.
+- **Battle logs** are saved to `battle_logs` table. Only the last 10 per user are retained.
+- **Migrations**: always generate a Drizzle migration after schema changes, and apply it before deploying.
