@@ -15,6 +15,18 @@ type Campaign = {
   isActive: boolean;
 };
 
+type UserCharacter = {
+  characterId: string;
+  level: number;
+  isDead: number;
+  exp: number;
+  hp: number;
+  attack: number;
+  defense: number;
+  actionSpeed: number;
+  range: number;
+};
+
 const CARD_ICONS = ["\u{1F3F0}", "\u{2694}\u{FE0F}", "\u{1F6E1}\u{FE0F}", "\u{25C6}", "\u{1F525}", "\u{1F480}", "\u{1F5E1}\u{FE0F}", "\u{25C6}"];
 const CARD_ACCENTS = ["#3b82f6", "#ef4444", "#22c55e", "#a855f7", "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6"];
 
@@ -23,6 +35,8 @@ export default function CampaignListPage() {
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  const [characters, setCharacters] = useState<UserCharacter[]>([]);
+  const [charsLoading, setCharsLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/config")
@@ -34,6 +48,20 @@ export default function CampaignListPage() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setCharsLoading(false);
+      return;
+    }
+    fetch(`/api/user/characters?userId=${encodeURIComponent(user.uid)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok) setCharacters(data.characters ?? []);
+      })
+      .catch(console.error)
+      .finally(() => setCharsLoading(false));
+  }, [user?.uid]);
 
   function startCampaign(c: Campaign) {
     router.push(`/g/camp?id=${encodeURIComponent(c.id)}`);
@@ -64,22 +92,40 @@ export default function CampaignListPage() {
 
           <div style={styles.userGroup}>
             <span style={styles.userEmail}>{user?.email ?? ""}</span>
-            <button
-              onClick={signOut}
-              style={styles.signOutBtn}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,0.07)";
-                e.currentTarget.style.color = "#8899aa";
-                e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(255,255,255,0.03)";
-                e.currentTarget.style.color = "#667788";
-                e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
-              }}
-            >
-              Leave
-            </button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                onClick={() => router.push("/auth/spell-shop")}
+                style={styles.spellShopBtn}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(168,85,247,0.2)";
+                  e.currentTarget.style.color = "#c084fc";
+                  e.currentTarget.style.borderColor = "rgba(168,85,247,0.4)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(168,85,247,0.1)";
+                  e.currentTarget.style.color = "#a855f7";
+                  e.currentTarget.style.borderColor = "rgba(168,85,247,0.2)";
+                }}
+              >
+                &#9830; Spell Shop
+              </button>
+              <button
+                onClick={signOut}
+                style={styles.signOutBtn}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+                  e.currentTarget.style.color = "#8899aa";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                  e.currentTarget.style.color = "#667788";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+                }}
+              >
+                Leave
+              </button>
+            </div>
           </div>
         </header>
 
@@ -89,6 +135,54 @@ export default function CampaignListPage() {
           <span style={styles.dividerLine} />
           <span style={styles.dividerDiamond}>{`\u25C6`}</span>
         </div>
+
+        {/* ──────── CHARACTER ROSTER ──────── */}
+        {!charsLoading && characters.length > 0 && (
+          <section style={styles.rosterSection}>
+            <h2 style={{ ...styles.rosterTitle, fontFamily: questFont.style.fontFamily }}>
+              Your Heroes
+            </h2>
+            <div style={styles.rosterList}>
+              {characters.map((ch) => {
+                const dead = ch.isDead !== 0;
+                return (
+                  <button
+                    key={ch.characterId}
+                    onClick={() => {
+                      if (!dead) router.push("/auth/character/" + ch.characterId);
+                    }}
+                    style={{
+                      ...styles.heroPill,
+                      ...(dead ? styles.heroPillDead : {}),
+                      cursor: dead ? "default" : "pointer",
+                    }}
+                    title={dead ? "Fallen \u2014 cannot be fielded" : undefined}
+                    onMouseEnter={
+                      !dead
+                        ? (e) => {
+                            e.currentTarget.style.borderColor = "#a855f7";
+                            e.currentTarget.style.background = "rgba(168,85,247,0.1)";
+                          }
+                        : undefined
+                    }
+                    onMouseLeave={
+                      !dead
+                        ? (e) => {
+                            e.currentTarget.style.borderColor = "rgba(168,85,247,0.2)";
+                            e.currentTarget.style.background = "rgba(168,85,247,0.05)";
+                          }
+                        : undefined
+                    }
+                  >
+                    {dead && <span style={styles.skullIcon}>{`\uD83D\uDC80`}</span>}
+                    <span style={styles.heroName}>{ch.characterId}</span>
+                    <span style={styles.heroLevel}>Lv.{ch.level}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* ──────── CONTENT ──────── */}
         <main style={styles.main}>
@@ -559,6 +653,83 @@ const styles: Record<string, React.CSSProperties> = {
     color: "rgba(255,255,255,0.12)",
     marginRight: 4,
     transition: "color 0.2s, transform 0.2s",
+  },
+
+  /* ─── SPELL SHOP BUTTON ─── */
+  spellShopBtn: {
+    padding: "5px 14px",
+    borderRadius: 6,
+    border: "1px solid rgba(168,85,247,0.2)",
+    background: "rgba(168,85,247,0.1)",
+    color: "#a855f7",
+    cursor: "pointer",
+    fontSize: 12,
+    fontWeight: 500,
+    letterSpacing: "0.04em",
+    transition: "all 0.2s",
+    whiteSpace: "nowrap",
+  },
+
+  /* ─── CHARACTER ROSTER ─── */
+  rosterSection: {
+    marginBottom: 20,
+  },
+
+  rosterTitle: {
+    fontSize: 13,
+    color: "#667788",
+    letterSpacing: "0.12em",
+    textTransform: "uppercase" as const,
+    margin: 0,
+    marginBottom: 10,
+  },
+
+  rosterList: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: 8,
+  },
+
+  heroPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 14px",
+    borderRadius: 20,
+    border: "1px solid rgba(168,85,247,0.2)",
+    background: "rgba(168,85,247,0.05)",
+    color: "#c8d6e5",
+    fontSize: 13,
+    lineHeight: 1.3,
+    transition: "border-color 0.2s, background 0.2s",
+    fontFamily: "inherit",
+    outline: "none",
+    WebkitTapHighlightColor: "transparent",
+  } as React.CSSProperties,
+
+  heroPillDead: {
+    opacity: 0.4,
+    border: "1px dashed rgba(255,255,255,0.15)",
+    background: "rgba(255,255,255,0.02)",
+    color: "#667788",
+    cursor: "default",
+    pointerEvents: "none" as const,
+  },
+
+  skullIcon: {
+    fontSize: 13,
+    lineHeight: 1,
+  },
+
+  heroName: {
+    fontWeight: 500,
+  },
+
+  heroLevel: {
+    fontSize: 11,
+    color: "#a855f7",
+    fontWeight: 600,
+    letterSpacing: "0.04em",
   },
 
   /* ─── FOOTER ─── */
