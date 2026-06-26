@@ -20,6 +20,7 @@ export {
   listCampaigns,
   getRoster,
   listBattleRewards,
+  saveBattleLog,
 
   // Writes
   writeUserState,

@@ -16,6 +16,7 @@ import type {
   SpellInput,
   UnitStats,
 } from "@/lib/battle/types";
+import { saveBattleLog } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -180,7 +181,7 @@ export async function POST(req: NextRequest) {
   if (typeof body !== "object" || body === null) {
     return NextResponse.json({ error: "expected an object" }, { status: 400 });
   }
-  const { players: rawPlayers, enemies: rawEnemies, spawnCount: rawSpawnCount } = body as Record<string, unknown>;
+  const { players: rawPlayers, enemies: rawEnemies, spawnCount: rawSpawnCount, userId, campaignId, waveIndex } = body as Record<string, unknown>;
 
   // Optional spawnCount for mid-fight spawning (campaign waves only).
   const spawnCount =
@@ -214,5 +215,15 @@ export async function POST(req: NextRequest) {
   };
 
   const result = resolveBattle(request);
+
+  // Fire-and-forget: save the battle log (non-blocking, never rejects the response).
+  saveBattleLog({
+    userId: typeof userId === "string" ? userId : null,
+    campaignId: typeof campaignId === "string" ? campaignId : null,
+    waveIndex: typeof waveIndex === "number" ? waveIndex : null,
+    request: request,
+    result,
+  }).catch(() => {});
+
   return NextResponse.json(result);
 }

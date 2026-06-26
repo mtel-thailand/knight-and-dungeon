@@ -382,7 +382,10 @@ export default function CampClient() {
     }
     if (enemies.length === 0) return "No valid enemy characters in monster pool (all missing battle stats).";
 
-    const req: ResolveRequest = { players: party, enemies, spawnCount: camp.spawnCount ?? 0 };
+    const req: ResolveRequest = {
+      players: party, enemies, spawnCount: camp.spawnCount ?? 0,
+      userId, campaignId: camp.id, waveIndex: k,
+    };
     const outcome = await requestResolve(req);
     if (!outcome.ok) return outcome.error;
 

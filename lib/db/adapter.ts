@@ -6,7 +6,7 @@
  * so all callers (routes, seed scripts) import from @/lib/db without changes.
  */
 
-import { eq, sql, inArray, notInArray, and } from "drizzle-orm";
+import { eq, sql, inArray, notInArray, and, desc } from "drizzle-orm";
 import { getDb } from "./client";
 import * as schema from "./schema";
 import type {
@@ -788,6 +788,45 @@ export async function pruneBattleRewards(keepIds: string[]): Promise<void> {
     return;
   }
   await db.delete(schema.battleRewards).where(notInArray(schema.battleRewards.id, keepIds));
+}
+
+// ---- battle logs ----
+
+/** Persist a battle resolve result and keep only the last 10 per user. */
+export async function saveBattleLog(params: {
+  userId?: string | null;
+  campaignId?: string | null;
+  waveIndex?: number | null;
+  request: unknown;
+  result: unknown;
+}): Promise<void> {
+  const db = getDb();
+  await db.insert(schema.battleLogs).values({
+    userId: params.userId ?? null,
+    campaignId: params.campaignId ?? null,
+    waveIndex: params.waveIndex ?? null,
+    request: JSON.stringify(params.request),
+    result: JSON.stringify(params.result),
+  });
+
+  // Keep only the 10 most recent logs for this user
+  if (params.userId) {
+    const keep = await db
+      .select({ id: schema.battleLogs.id })
+      .from(schema.battleLogs)
+      .where(eq(schema.battleLogs.userId, params.userId))
+      .orderBy(desc(schema.battleLogs.createdAt))
+      .limit(10);
+    if (keep.length > 0) {
+      const keepIds = keep.map((r) => r.id);
+      await db.delete(schema.battleLogs).where(
+        and(
+          eq(schema.battleLogs.userId, params.userId),
+          notInArray(schema.battleLogs.id, keepIds),
+        ),
+      );
+    }
+  }
 }
 
 // ---- seeding convenience ----

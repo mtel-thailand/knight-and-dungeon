@@ -273,6 +273,9 @@ export type ResolveRequest = {
   enemies: PartyMemberInput[];
   spawnCount?: number; // how many extra enemies can spawn mid-fight (0 = none)
   spawnInterval?: number; // seconds between spawns (default SPAWN_INTERVAL)
+  userId?: string; // for persisting battle logs
+  campaignId?: string; // for persisting battle logs
+  waveIndex?: number; // for persisting battle logs
 };
 
 export type ResolveResult = {

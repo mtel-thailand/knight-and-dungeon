@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
+  timestamp,
   integer,
   doublePrecision,
   uniqueIndex,
@@ -233,3 +234,16 @@ export const userStats = pgTable(
     totalMana: integer("total_mana").notNull().default(0),
   },
 );
+
+// ---------------------------------------------------------------------------
+// battle_logs — persisted battle resolve results for user history
+// ---------------------------------------------------------------------------
+export const battleLogs = pgTable("battle_logs", {
+  id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+  userId: text("user_id"),
+  campaignId: text("campaign_id"),
+  waveIndex: integer("wave_index"),
+  request: text("request").notNull(), // JSON: ResolveRequest
+  result: text("result").notNull(), // JSON: ResolveResult
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
