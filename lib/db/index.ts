@@ -47,6 +47,11 @@ export {
   initUser,
   getUserCharacters,
   getUserStats,
+  getUserCharacterSpells,
+  purchaseSpell,
+  markCharacterDeadAndForfeit,
+  creditMana,
+  setSpellHpThreshold,
 } from "./adapter";
 
 export type {

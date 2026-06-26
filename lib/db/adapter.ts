@@ -203,6 +203,8 @@ export async function listSpells(): Promise<SpellDef[]> {
     rotation: r.rotation ?? undefined,
     transitionIn: (r.transitionIn as SpellTransition) ?? undefined,
     transitionOut: (r.transitionOut as SpellTransition) ?? undefined,
+    price: r.price ?? 0,
+    manaCost: r.manaCost ?? 1,
   }));
 }
 
@@ -587,6 +589,8 @@ export async function upsertSpell(s: {
   rotation?: number;
   transitionIn?: SpellTransition;
   transitionOut?: SpellTransition;
+  price?: number;
+  manaCost?: number;
   sortOrder?: number;
 }): Promise<void> {
   const db = getDb();
@@ -617,6 +621,8 @@ export async function upsertSpell(s: {
       rotation: s.rotation ?? null,
       transitionIn: s.transitionIn === "fade" || s.transitionIn === "none" ? s.transitionIn : null,
       transitionOut: s.transitionOut === "fade" || s.transitionOut === "none" ? s.transitionOut : null,
+      price: s.price ?? 0,
+      manaCost: s.manaCost ?? 1,
       sortOrder,
     })
     .onConflictDoUpdate({
@@ -638,6 +644,8 @@ export async function upsertSpell(s: {
         rotation: sql`excluded.rotation`,
         transitionIn: sql`excluded.transition_in`,
         transitionOut: sql`excluded.transition_out`,
+        price: sql`excluded.price`,
+        manaCost: sql`excluded.mana_cost`,
       },
     });
 }
@@ -669,6 +677,176 @@ export async function setCharacterSpells(
       });
     }
   });
+}
+
+// ---- user character spells (purchased, per-user) ----
+
+/** Get all user-owned character spell purchases. */
+export async function getUserCharacterSpells(
+  userId: string,
+): Promise<Array<{ characterId: string; spellId: string }>> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.userCharacterSpells)
+    .where(eq(schema.userCharacterSpells.userId, userId))
+    .orderBy(
+      schema.userCharacterSpells.userId,
+      schema.userCharacterSpells.characterId,
+      schema.userCharacterSpells.sortOrder,
+    );
+  return rows.map((r) => ({ characterId: r.characterId, spellId: r.spellId }));
+}
+
+/**
+ * Purchase a spell for a character — atomic server-authoritative.
+ * Deducts spell.price from user_stats.total_mana, inserts user_character_spells row.
+ * Returns { ok, balance } or { ok: false, reason }.
+ */
+export async function purchaseSpell(
+  userId: string,
+  characterId: string,
+  spellId: string,
+): Promise<
+  | { ok: true; balance: number }
+  | { ok: false; reason: "insufficient" | "already_owned" | "unknown_spell" }
+> {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    // 1. Read the spell's price
+    const [spellRow] = await tx
+      .select({ price: schema.spells.price })
+      .from(schema.spells)
+      .where(eq(schema.spells.id, spellId));
+    if (!spellRow) {
+      return { ok: false as const, reason: "unknown_spell" as const };
+    }
+
+    // 2. Check if already owned
+    const [owned] = await tx
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(schema.userCharacterSpells)
+      .where(
+        and(
+          eq(schema.userCharacterSpells.userId, userId),
+          eq(schema.userCharacterSpells.characterId, characterId),
+          eq(schema.userCharacterSpells.spellId, spellId),
+        ),
+      );
+    if (owned && owned.n > 0) {
+      return { ok: false as const, reason: "already_owned" as const };
+    }
+
+    // 3. Read user balance
+    const [statsRow] = await tx
+      .select({ totalMana: schema.userStats.totalMana })
+      .from(schema.userStats)
+      .where(eq(schema.userStats.userId, userId));
+    const balance = statsRow?.totalMana ?? 0;
+    const price = spellRow.price ?? 0;
+    if (balance < price) {
+      return { ok: false as const, reason: "insufficient" as const };
+    }
+
+    const newBalance = balance - price;
+
+    // 4. Deduct mana
+    await tx
+      .update(schema.userStats)
+      .set({ totalMana: newBalance })
+      .where(eq(schema.userStats.userId, userId));
+
+    // 5. Compute next sortOrder
+    const [maxRow] = await tx
+      .select({ n: sql<number | null>`COALESCE(MAX(sort_order), -1) + 1` })
+      .from(schema.userCharacterSpells)
+      .where(
+        and(
+          eq(schema.userCharacterSpells.userId, userId),
+          eq(schema.userCharacterSpells.characterId, characterId),
+        ),
+      );
+    const sortOrder = maxRow?.n ?? 0;
+
+    // 6. Insert ownership
+    await tx
+      .insert(schema.userCharacterSpells)
+      .values({ userId, characterId, spellId, sortOrder })
+      .onConflictDoNothing({
+        target: [
+          schema.userCharacterSpells.userId,
+          schema.userCharacterSpells.characterId,
+          schema.userCharacterSpells.spellId,
+        ],
+      });
+
+    return { ok: true as const, balance: newBalance };
+  });
+}
+
+/**
+ * Atomic: sets is_dead=1 AND deletes all user_character_spells for (userId, characterId).
+ */
+export async function markCharacterDeadAndForfeit(
+  userId: string,
+  characterId: string,
+): Promise<void> {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.userCharacters)
+      .set({ isDead: 1 })
+      .where(
+        and(
+          eq(schema.userCharacters.userId, userId),
+          eq(schema.userCharacters.characterId, characterId),
+        ),
+      );
+    await tx
+      .delete(schema.userCharacterSpells)
+      .where(
+        and(
+          eq(schema.userCharacterSpells.userId, userId),
+          eq(schema.userCharacterSpells.characterId, characterId),
+        ),
+      );
+  });
+}
+
+/**
+ * Add delta mana to the user's wallet (clamped ≥ 0). Returns new balance.
+ */
+export async function creditMana(userId: string, delta: number): Promise<number> {
+  const db = getDb();
+  const [row] = await db
+    .update(schema.userStats)
+    .set({
+      totalMana: sql`greatest(0, ${schema.userStats.totalMana} + ${Math.floor(delta)})`,
+    })
+    .where(eq(schema.userStats.userId, userId))
+    .returning({ totalMana: schema.userStats.totalMana });
+  return row?.totalMana ?? 0;
+}
+
+/**
+ * Update ONLY the spellHpThreshold column (clamp 0..100). Never touches is_dead.
+ */
+export async function setSpellHpThreshold(
+  userId: string,
+  characterId: string,
+  value: number,
+): Promise<void> {
+  const db = getDb();
+  const clamped = Math.max(0, Math.min(100, Math.floor(value)));
+  await db
+    .update(schema.userCharacters)
+    .set({ spellHpThreshold: clamped })
+    .where(
+      and(
+        eq(schema.userCharacters.userId, userId),
+        eq(schema.userCharacters.characterId, characterId),
+      ),
+    );
 }
 
 // ---- campaigns ----

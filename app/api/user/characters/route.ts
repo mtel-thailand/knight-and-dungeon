@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserCharacters } from "@/lib/db";
+import { getUserCharacters, setSpellHpThreshold } from "@/lib/db";
 import { getDb } from "@/lib/db/client";
 import { eq } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
@@ -26,7 +26,8 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/user/characters — Upsert a character's EXP (and optionally stats).
- * Body: { userId, characterId, exp, level?, hp?, attack?, defense?, actionSpeed? }
+ * Body: { userId, characterId, exp, level?, spellHpThreshold?, hp?, attack?, defense?, actionSpeed? }
+ * spellHpThreshold is clamped 0..100 and set separately (never touches is_dead).
  */
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -35,11 +36,12 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-  const { userId, characterId, exp, level } = body as {
+  const { userId, characterId, exp, level, spellHpThreshold } = body as {
     userId?: string;
     characterId?: string;
     exp?: number;
     level?: number;
+    spellHpThreshold?: number;
   };
   if (!userId || !characterId) {
     return NextResponse.json({ ok: false, error: "userId and characterId required" }, { status: 400 });
@@ -57,6 +59,10 @@ export async function POST(req: NextRequest) {
         target: [schema.userCharacters.userId, schema.userCharacters.characterId],
         set: setFields as any,
       });
+    // Optional spellHpThreshold update (never resets is_dead)
+    if (typeof spellHpThreshold === "number") {
+      await setSpellHpThreshold(userId, characterId, spellHpThreshold);
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

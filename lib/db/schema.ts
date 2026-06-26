@@ -138,6 +138,8 @@ export const spells = pgTable("spells", {
   rotation: doublePrecision("rotation"),
   transitionIn: text("transition_in"),
   transitionOut: text("transition_out"),
+  price: integer("price").notNull().default(0),
+  manaCost: integer("mana_cost").notNull().default(1),
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
@@ -169,6 +171,20 @@ export const characterSpells = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.characterId, t.spellId] })],
+);
+
+// ---------------------------------------------------------------------------
+// user_character_spells — per-user per-character purchased spells
+// ---------------------------------------------------------------------------
+export const userCharacterSpells = pgTable(
+  "user_character_spells",
+  {
+    userId: text("user_id").notNull(),
+    characterId: text("character_id").notNull(),
+    spellId: text("spell_id").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.characterId, t.spellId] })],
 );
 
 // ---------------------------------------------------------------------------
@@ -213,6 +229,8 @@ export const userCharacters = pgTable(
     range: integer("range").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     avatarUrl: text("avatar_url"),
+    isDead: integer("is_dead").notNull().default(0),
+    spellHpThreshold: integer("spell_hp_threshold").notNull().default(50),
   },
   (t) => [primaryKey({ columns: [t.userId, t.characterId] })],
 );

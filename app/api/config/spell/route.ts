@@ -68,6 +68,8 @@ export async function POST(req: NextRequest) {
       spell.transitionOut === "fade" || spell.transitionOut === "none"
         ? spell.transitionOut
         : undefined,
+    price: typeof spell.price === "number" && Number.isFinite(spell.price) ? spell.price : undefined,
+    manaCost: typeof spell.manaCost === "number" && Number.isFinite(spell.manaCost) ? spell.manaCost : undefined,
   });
   return NextResponse.json({ ok: true });
 }

@@ -14,6 +14,7 @@ import type {
   PartyMemberInput,
   ResolveRequest,
   SpellInput,
+  SpellType,
   UnitStats,
 } from "@/lib/battle/types";
 import { saveBattleLog } from "@/lib/db";
@@ -49,8 +50,9 @@ function sanitizePosition(pos: unknown): HexPosition | null {
 }
 
 // Validate a member's spell list: drop invalid entries, dedupe by id, clamp
-// power/cooldown, cap at MAX_SPELLS_PER_UNIT. Never throws / never fails the
-// request — bad spells are simply omitted (mirrors the skills handling).
+// power/cooldown/manaCost, cap at MAX_SPELLS_PER_UNIT. Accepts "attack" and
+// "heal" types; power is clamped for attack, defaulted to 0 for heal (ignored).
+// Never throws / never fails the request — bad spells are simply omitted.
 function sanitizeSpells(raw: unknown): SpellInput[] {
   if (!Array.isArray(raw)) return [];
   const out: SpellInput[] = [];
@@ -60,16 +62,30 @@ function sanitizeSpells(raw: unknown): SpellInput[] {
     if (typeof x !== "object" || x === null) continue;
     const o = x as Record<string, unknown>;
     if (typeof o.id !== "string" || !o.id || seen.has(o.id)) continue;
-    if (o.type !== "attack") continue;
-    if (typeof o.power !== "number" || !Number.isFinite(o.power)) continue;
+    const spellType = o.type;
+    if (spellType !== "attack" && spellType !== "heal") continue;
     if (typeof o.cooldown !== "number" || !Number.isFinite(o.cooldown)) continue;
     seen.add(o.id);
+
+    const power =
+      spellType === "attack"
+        ? typeof o.power === "number" && Number.isFinite(o.power)
+          ? clamp(o.power, SPELL_BOUNDS.power.min, SPELL_BOUNDS.power.max)
+          : 0
+        : 0; // heal ignores power
+
+    const manaCost =
+      typeof o.manaCost === "number" && Number.isFinite(o.manaCost)
+        ? clamp(Math.round(o.manaCost), SPELL_BOUNDS.manaCost.min, SPELL_BOUNDS.manaCost.max)
+        : 1;
+
     out.push({
       id: o.id,
-      type: "attack",
-      power: clamp(o.power, SPELL_BOUNDS.power.min, SPELL_BOUNDS.power.max),
+      type: spellType as SpellType,
+      power,
       cooldown: clamp(o.cooldown, SPELL_BOUNDS.cooldown.min, SPELL_BOUNDS.cooldown.max),
       animationKey: typeof o.animationKey === "string" ? o.animationKey : "",
+      manaCost,
     });
   }
   return out;
@@ -126,6 +142,11 @@ function sanitizeMember(raw: unknown): PartyMemberInput | string {
       ? clamp(m.currentHp, 1, hp)
       : undefined;
 
+  const spellHpThreshold =
+    typeof m.spellHpThreshold === "number" && Number.isFinite(m.spellHpThreshold)
+      ? clamp(Math.round(m.spellHpThreshold), 0, 100)
+      : 50;
+
   const stats: UnitStats = { hp, attack, defense, actionSpeed, range, skills, attackType };
   return {
     characterId: m.characterId,
@@ -133,6 +154,7 @@ function sanitizeMember(raw: unknown): PartyMemberInput | string {
     position,
     spells: sanitizeSpells(m.spells),
     ...(currentHp !== undefined ? { currentHp } : {}),
+    spellHpThreshold,
   };
 }
 
@@ -181,7 +203,15 @@ export async function POST(req: NextRequest) {
   if (typeof body !== "object" || body === null) {
     return NextResponse.json({ error: "expected an object" }, { status: 400 });
   }
-  const { players: rawPlayers, enemies: rawEnemies, spawnCount: rawSpawnCount, userId, campaignId, waveIndex } = body as Record<string, unknown>;
+  const {
+    players: rawPlayers,
+    enemies: rawEnemies,
+    spawnCount: rawSpawnCount,
+    userId,
+    campaignId,
+    waveIndex,
+    startingMana: rawStartingMana,
+  } = body as Record<string, unknown>;
 
   // Optional spawnCount for mid-fight spawning (campaign waves only).
   const spawnCount =
@@ -208,10 +238,24 @@ export async function POST(req: NextRequest) {
     seen.add(key);
   }
 
+  // Normalize starting mana per side: clamp to [0, 10], round, default 0.
+  const rawSM = (rawStartingMana ?? {}) as Record<string, unknown>;
+  const startingMana = {
+    player:
+      typeof rawSM.player === "number" && Number.isFinite(rawSM.player)
+        ? clamp(Math.round(rawSM.player), 0, 10)
+        : 0,
+    enemy:
+      typeof rawSM.enemy === "number" && Number.isFinite(rawSM.enemy)
+        ? clamp(Math.round(rawSM.enemy), 0, 10)
+        : 0,
+  };
+
   const request: ResolveRequest = {
     players: canonicalize(players),
     enemies: canonicalize(enemies),
     ...(spawnCount !== undefined ? { spawnCount } : {}),
+    startingMana,
   };
 
   const result = resolveBattle(request);

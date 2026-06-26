@@ -64,6 +64,8 @@ export default function SpellsListPage() {
       type: DEFAULT_SPELL_TYPE,
       power: 1,
       cooldown: 0,
+      price: 0,
+      manaCost: 1,
     };
     setBusy(true);
     setSpells((prev) => [...prev, spell]); // optimistic
@@ -168,6 +170,8 @@ export default function SpellsListPage() {
                     <span className="spell-tag">{animLabel(s.animationKey)}</span>
                     <span className="spell-stat">PWR {s.power}</span>
                     <span className="spell-stat">CD {s.cooldown}s</span>
+                    <span className="spell-stat">${s.price}</span>
+                    <span className="spell-stat">MP {s.manaCost}</span>
                   </span>
                 </Link>
                 <button

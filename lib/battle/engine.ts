@@ -17,11 +17,18 @@ import type {
   Action,
   BattleState,
   BattleSnapshot,
+  ManaState,
   PartyMemberInput,
   ResolveRequest,
   ResolveResult,
 } from "./types";
-import { BATTLE_TICK, DEFAULT_ATTACK_TYPE, SPAWN_INTERVAL } from "./types";
+import {
+  BATTLE_TICK,
+  DEFAULT_ATTACK_TYPE,
+  SPAWN_INTERVAL,
+  TANK_MANA_MAX,
+  DEFAULT_SPELL_HP_THRESHOLD,
+} from "./types";
 import {
   VALID_HEXES,
   hexDistance,
@@ -31,6 +38,23 @@ import {
   tryPushUnit,
   findEnemySpawnHex,
 } from "./hex";
+
+// ---- Constants ----
+
+// How much HP a heal spell restores (NOT scaled by spell.power).
+const HEAL_SPELL_AMOUNT = 100;
+
+// ---- Helpers ----
+
+function clampInt(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(v)));
+}
+
+function finiteClamp(v: unknown, min: number, max: number): number {
+  return typeof v === "number" && Number.isFinite(v)
+    ? clampInt(v, min, max)
+    : 0;
+}
 
 // ---- Skill registry ----
 // Single source so executeAction can resolve a skill by id (v3 B2 fix).
@@ -54,7 +78,12 @@ export const SKILLS: Record<string, Skill> = {
 // per battle (`${team}-${characterId}-${index}`) — never from a module global — so
 // re-resolving the same request yields identical ids and events. Units are
 // concatenated player-first (mutation order: players resolve before enemies).
-export function createBattle(players: Unit[], enemies: Unit[], spawnCount: number = 0): BattleState {
+export function createBattle(
+  players: Unit[],
+  enemies: Unit[],
+  spawnCount: number = 0,
+  startingMana?: Partial<ManaState>,
+): BattleState {
   const assign = (units: Unit[], team: Team): Unit[] =>
     units.map((u, i) => ({ ...u, team, id: `${team}-${u.characterId}-${i}` }));
 
@@ -65,6 +94,10 @@ export function createBattle(players: Unit[], enemies: Unit[], spawnCount: numbe
     events: [],
     spawnsRemaining: spawnCount,
     nextSpawnAt: spawnCount > 0 ? SPAWN_INTERVAL : Infinity,
+    mana: {
+      player: finiteClamp(startingMana?.player, 0, TANK_MANA_MAX),
+      enemy: finiteClamp(startingMana?.enemy, 0, TANK_MANA_MAX),
+    },
   };
 }
 
@@ -151,12 +184,42 @@ function isSpellReady(unit: Unit, spellId: string): boolean {
   return cd === undefined || cd <= 0;
 }
 
-// First owned spell (payload order = deterministic) that is an attack and ready.
-// Magic has no range/row gate, so usability is type + cooldown only.
-function pickUsableSpell(unit: Unit): SpellInput | null {
+// Pick a heal target for a caster: living same-team units whose HP% is below the
+// caster's spellHpThreshold. Returns lowest-HP target; tie-break by iteration
+// order (deterministic: the unit array is stable per resolve).
+function pickHealTarget(caster: Unit, battle: BattleState): Unit | null {
+  const threshold = caster.spellHpThreshold; // 0..100
+  const candidates = battle.units.filter(
+    (u) =>
+      !u.isDead &&
+      u.team === caster.team &&
+      u.hp * 100 < threshold * u.maxHp,
+  );
+  if (candidates.length === 0) return null;
+  // Lowest HP wins; ties keep first-in-iteration-order (no stable-sort assumption).
+  let best = candidates[0];
+  for (const u of candidates) if (u.hp < best.hp) best = u;
+  return best;
+}
+
+// First owned spell (payload order = deterministic) that is ready, has enough
+// mana, and has a valid target. Attack spells pick via selectTarget; heal spells
+// pick via pickHealTarget. Returns {spell, target} or null.
+function pickUsableSpell(
+  unit: Unit,
+  battle: BattleState,
+): { spell: SpellInput; target: Unit } | null {
   for (const sp of unit.spells) {
-    if (sp.type !== "attack") continue;
-    if (isSpellReady(unit, sp.id)) return sp;
+    if (!isSpellReady(unit, sp.id)) continue;
+    if (sp.manaCost > battle.mana[unit.team]) continue;
+
+    if (sp.type === "attack") {
+      const target = selectTarget(unit, battle);
+      if (target) return { spell: sp, target };
+    } else if (sp.type === "heal") {
+      const target = pickHealTarget(unit, battle);
+      if (target) return { spell: sp, target };
+    }
   }
   return null;
 }
@@ -169,10 +232,15 @@ export function decideUnitAction(unit: Unit, battle: BattleState): Action {
   const nearest = selectTarget(unit, battle);
   if (!nearest) return { type: "wait", sourceId: unit.id };
 
-  // 1) SPELL (magic): cooldown-gated, ANY range/row — takes priority over skill/attack.
-  const spell = pickUsableSpell(unit);
-  if (spell) {
-    return { type: "spell", spellId: spell.id, sourceId: unit.id, targetId: nearest.id };
+  // 1) SPELL (magic): cooldown + mana gated, ANY range/row — picks its own target.
+  const spellResult = pickUsableSpell(unit, battle);
+  if (spellResult) {
+    return {
+      type: "spell",
+      spellId: spellResult.spell.id,
+      sourceId: unit.id,
+      targetId: spellResult.target.id,
+    };
   }
 
   // 2-4) Melee same-row rule: only engage (skill/attack) a DIFFERENT-row target; else
@@ -296,21 +364,60 @@ export function executeAction(action: Action, battle: BattleState): void {
       if (!target || target.isDead) return; // stale-target guard
       const spell = source.spells.find((s) => s.id === action.spellId);
       if (!spell) return; // unknown spell id (defensive)
-      // MAGIC: caster.attack * power, IGNORES defense; integer, min 1.
-      const damage = Math.max(1, Math.floor(source.attack * spell.power));
-      applyDamage(target, damage);
-      source.cooldowns[`spell:${spell.id}`] = spell.cooldown; // set cooldown on use
-      battle.events.push({
-        t,
-        kind: "spellcast",
-        sourceId: source.id,
-        targetId: target.id,
-        spellId: spell.id,
-        from: { q: source.position.q, r: source.position.r },
-        to: { q: target.position.q, r: target.position.r },
-        damage,
-        targetHp: target.hp,
-      });
+
+      if (spell.type === "attack") {
+        // Defensive mana check: insufficient mana = no-op, no cooldown, no event.
+        if (battle.mana[source.team] < spell.manaCost) return;
+        battle.mana[source.team] -= spell.manaCost;
+
+        // MAGIC: caster.attack * power, IGNORES defense; integer, min 1.
+        const damage = Math.max(1, Math.floor(source.attack * spell.power));
+        applyDamage(target, damage);
+        source.cooldowns[`spell:${spell.id}`] = spell.cooldown;
+
+        battle.events.push({
+          t,
+          kind: "spellcast",
+          spellType: "attack",
+          sourceId: source.id,
+          targetId: target.id,
+          spellId: spell.id,
+          from: { q: source.position.q, r: source.position.r },
+          to: { q: target.position.q, r: target.position.r },
+          damage,
+          targetHp: target.hp,
+          manaTeam: source.team,
+          manaCost: spell.manaCost,
+          manaAfter: battle.mana[source.team],
+        });
+      } else if (spell.type === "heal") {
+        // Defensive re-check: target same team, alive, still below threshold.
+        if (target.team !== source.team || target.isDead) return;
+        const threshold = source.spellHpThreshold;
+        if (!(target.hp * 100 < threshold * target.maxHp)) return;
+        if (battle.mana[source.team] < spell.manaCost) return;
+        battle.mana[source.team] -= spell.manaCost;
+
+        const heal = Math.min(HEAL_SPELL_AMOUNT, target.maxHp - target.hp);
+        target.hp += heal;
+        source.cooldowns[`spell:${spell.id}`] = spell.cooldown;
+
+        battle.events.push({
+          t,
+          kind: "spellcast",
+          spellType: "heal",
+          sourceId: source.id,
+          targetId: target.id,
+          spellId: spell.id,
+          from: { q: source.position.q, r: source.position.r },
+          to: { q: target.position.q, r: target.position.r },
+          healAmount: heal,
+          targetHp: target.hp,
+          manaTeam: source.team,
+          manaCost: spell.manaCost,
+          manaAfter: battle.mana[source.team],
+        });
+      }
       return;
     }
   }
@@ -326,7 +433,21 @@ export function checkDeaths(battle: BattleState, killedBy?: string): void {
     if (!unit.isDead && unit.hp <= 0) {
       unit.hp = 0;
       unit.isDead = true;
-      battle.events.push({ t: battle.currentTime, kind: "death", unitId: unit.id, killedBy });
+
+      // Mana accrual: +1 to opposing team, capped at TANK_MANA_MAX.
+      const awardTeam: Team = unit.team === "player" ? "enemy" : "player";
+      const before = battle.mana[awardTeam];
+      const after = Math.min(TANK_MANA_MAX, before + 1);
+      const delta = after - before;
+      battle.mana[awardTeam] = after;
+
+      battle.events.push({
+        t: battle.currentTime,
+        kind: "death",
+        unitId: unit.id,
+        killedBy,
+        manaAwarded: { team: awardTeam, delta, manaAfter: after },
+      });
     }
   }
 }
@@ -428,6 +549,7 @@ function spawnEnemy(battle: BattleState): boolean {
     position: { q: hex.q, r: hex.r },
     cooldowns: {},
     isDead: false,
+    spellHpThreshold: template.spellHpThreshold,
   };
 
   battle.units.push(newUnit);
@@ -513,6 +635,11 @@ function buildUnit(input: PartyMemberInput, team: Team): Unit {
     position: { q: input.position.q, r: input.position.r },
     cooldowns: {},
     isDead: false,
+    spellHpThreshold:
+      typeof input.spellHpThreshold === "number" &&
+      Number.isFinite(input.spellHpThreshold)
+        ? clampInt(input.spellHpThreshold, 0, 100)
+        : DEFAULT_SPELL_HP_THRESHOLD,
   };
 }
 
@@ -537,7 +664,13 @@ export function resolveBattle(req: ResolveRequest): ResolveResult {
   const players = req.players.map((p) => buildUnit(p, "player"));
   const enemies = req.enemies.map((e) => buildUnit(e, "enemy"));
 
-  const battle = createBattle(players, enemies, req.spawnCount ?? 0);
+  // Normalize starting mana (default 0 per side).
+  const manaInitial: ManaState = {
+    player: finiteClamp(req.startingMana?.player, 0, TANK_MANA_MAX),
+    enemy: finiteClamp(req.startingMana?.enemy, 0, TANK_MANA_MAX),
+  };
+
+  const battle = createBattle(players, enemies, req.spawnCount ?? 0, manaInitial);
 
   // Capture the opening board BEFORE any event is emitted, then run.
   const initialState = snapshotInitial(battle);
@@ -560,5 +693,9 @@ export function resolveBattle(req: ResolveRequest): ResolveResult {
     finalState,
     events: battle.events,
     expGains: Object.keys(expGains).length > 0 ? expGains : undefined,
+    mana: {
+      initial: manaInitial,
+      final: { player: battle.mana.player, enemy: battle.mana.enemy },
+    },
   };
 }

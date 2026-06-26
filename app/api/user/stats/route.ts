@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserStats } from "@/lib/db";
+import { getUserStats, creditMana } from "@/lib/db";
 import { getDb } from "@/lib/db/client";
 import { eq, sql } from "drizzle-orm";
 import * as schema from "@/lib/db/schema";
@@ -25,9 +25,10 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/user/stats — Upsert a user's meta stats (e.g. totalExp).
- * Body: { userId, totalExp?, totalWins?, totalLosses?, totalKills? }
- * Only provided fields are updated.
+ * POST /api/user/stats — Upsert a user's meta stats.
+ * Body: { userId, totalExp?, totalWins?, totalLosses?, totalKills?, manaCredit? }
+ * Only provided fields are updated. manaCredit is additive (creditMana), NOT absolute.
+ * Returns { ok, balance } when manaCredit is provided.
  */
 export async function POST(req: NextRequest) {
   let body: unknown;
@@ -36,13 +37,13 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-  const { userId, totalExp, totalWins, totalLosses, totalKills, totalMana } = body as {
+  const { userId, totalExp, totalWins, totalLosses, totalKills, manaCredit } = body as {
     userId?: string;
     totalExp?: number;
     totalWins?: number;
     totalLosses?: number;
     totalKills?: number;
-    totalMana?: number;
+    manaCredit?: number;
   };
   if (!userId || typeof userId !== "string") {
     return NextResponse.json({ ok: false, error: "userId required" }, { status: 400 });
@@ -54,16 +55,21 @@ export async function POST(req: NextRequest) {
     if (typeof totalWins === "number") updates.total_wins = totalWins;
     if (typeof totalLosses === "number") updates.total_losses = totalLosses;
     if (typeof totalKills === "number") updates.total_kills = totalKills;
-    if (typeof totalMana === "number") updates.total_mana = totalMana;
-    if (Object.keys(updates).length === 0) {
+    // Handle additive mana credit (NOT absolute totalMana)
+    const manaDelta = typeof manaCredit === "number" && Number.isFinite(manaCredit) ? Math.floor(manaCredit) : 0;
+    if (Object.keys(updates).length === 0 && manaDelta === 0) {
       return NextResponse.json({ ok: false, error: "no fields to update" }, { status: 400 });
     }
-    const values = { userId, ...updates } as any;
-    await db
-      .insert(schema.userStats)
-      .values(values)
-      .onConflictDoUpdate({ target: schema.userStats.userId, set: updates as any });
-    return NextResponse.json({ ok: true });
+    if (Object.keys(updates).length > 0) {
+      const values = { userId, ...updates } as any;
+      await db
+        .insert(schema.userStats)
+        .values(values)
+        .onConflictDoUpdate({ target: schema.userStats.userId, set: updates as any });
+    }
+    // Apply mana credit after other updates
+    const balance = manaDelta !== 0 ? await creditMana(userId, manaDelta) : undefined;
+    return NextResponse.json({ ok: true, ...(balance !== undefined ? { balance } : {}) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
