@@ -1416,6 +1416,13 @@ function BattleStage({
                 const p = pixelOf(ev.position.q, ev.position.r);
                 node.position.set(p.x, p.y);
                 node.zIndex = p.y;
+                // Apply the same layout transform that relayout() would:
+                // counter-rotate to stay upright, scale to live tile size.
+                const k = boardLayout.tileW / TW0;
+                const isx = 1 / Math.cos(boardLayout.rotYRad);
+                const isy = 1 / Math.cos(boardLayout.rotXRad);
+                node.scale.set(k * isx, k * isy);
+                node.rotation = -boardLayout.rotRad;
                 node.alpha = 0; // start invisible, fade in
                 unitsLayer.addChild(node);
 
