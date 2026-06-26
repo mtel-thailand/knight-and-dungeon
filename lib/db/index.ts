@@ -52,6 +52,7 @@ export {
   markCharacterDeadAndForfeit,
   creditMana,
   setSpellHpThreshold,
+  claimCharacter,
 } from "./adapter";
 
 export type {

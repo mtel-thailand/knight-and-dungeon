@@ -94,6 +94,27 @@ export default function CampaignListPage() {
             <span style={styles.userEmail}>{user?.email ?? ""}</span>
             <div style={{ display: "flex", gap: 6 }}>
               <button
+                onClick={() => router.push("/auth/character-shop")}
+                style={{
+                  ...styles.spellShopBtn,
+                  borderColor: "rgba(59,130,246,0.2)",
+                  background: "rgba(59,130,246,0.1)",
+                  color: "#60a5fa",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(59,130,246,0.2)";
+                  e.currentTarget.style.color = "#93c5fd";
+                  e.currentTarget.style.borderColor = "rgba(59,130,246,0.4)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(59,130,246,0.1)";
+                  e.currentTarget.style.color = "#60a5fa";
+                  e.currentTarget.style.borderColor = "rgba(59,130,246,0.2)";
+                }}
+              >
+                &#9876; Heroes
+              </button>
+              <button
                 onClick={() => router.push("/auth/spell-shop")}
                 style={styles.spellShopBtn}
                 onMouseEnter={(e) => {

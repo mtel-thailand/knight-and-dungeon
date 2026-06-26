@@ -1025,6 +1025,76 @@ export async function saveBattleLog(params: {
   }
 }
 
+// ---- free character claim ----
+
+/**
+ * Claim a character for free. Succeeds only when the user has NO living character.
+ *
+ * - If a row exists for (userId, characterId) AND is_dead=0 → already_owned.
+ * - If ANY user_characters row has is_dead=0 → has_living_character.
+ * - Otherwise upserts: new row gets default stats + is_dead=0; existing (dead)
+ *   row just flips is_dead=0 (preserving level/exp/progress).
+ */
+export async function claimCharacter(
+  userId: string,
+  characterId: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const db = getDb();
+  return db.transaction(async (tx) => {
+    // 1. Check if already owned and living
+    const [owned] = await tx
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(schema.userCharacters)
+      .where(
+        and(
+          eq(schema.userCharacters.userId, userId),
+          eq(schema.userCharacters.characterId, characterId),
+          eq(schema.userCharacters.isDead, 0),
+        ),
+      );
+    if (owned && owned.n > 0) {
+      return { ok: false as const, reason: "already_owned" };
+    }
+
+    // 2. Check for ANY living character
+    const [living] = await tx
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(schema.userCharacters)
+      .where(
+        and(
+          eq(schema.userCharacters.userId, userId),
+          eq(schema.userCharacters.isDead, 0),
+        ),
+      );
+    if (living && living.n > 0) {
+      return { ok: false as const, reason: "has_living_character" };
+    }
+
+    // 3. Upsert: new row = default stats + alive; existing (dead) row = just revive
+    await tx
+      .insert(schema.userCharacters)
+      .values({
+        userId,
+        characterId,
+        level: 1,
+        exp: 0,
+        hp: 200,
+        attack: 20,
+        defense: 0,
+        actionSpeed: 100,
+        range: 1,
+        sortOrder: 0,
+        isDead: 0,
+      })
+      .onConflictDoUpdate({
+        target: [schema.userCharacters.userId, schema.userCharacters.characterId],
+        set: { isDead: 0 },
+      });
+
+    return { ok: true };
+  });
+}
+
 // ---- seeding convenience ----
 
 /** Seed the default battle rewards if the table is empty. */
