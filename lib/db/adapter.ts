@@ -818,12 +818,18 @@ export async function markCharacterDeadAndForfeit(
  */
 export async function creditMana(userId: string, delta: number): Promise<number> {
   const db = getDb();
+  const d = Math.floor(delta);
+  // Upsert: create the stats row if the user has none yet (otherwise an
+  // UPDATE-only would silently no-op and the credited mana would be lost).
   const [row] = await db
-    .update(schema.userStats)
-    .set({
-      totalMana: sql`greatest(0, ${schema.userStats.totalMana} + ${Math.floor(delta)})`,
+    .insert(schema.userStats)
+    .values({ userId, totalMana: Math.max(0, d) })
+    .onConflictDoUpdate({
+      target: schema.userStats.userId,
+      set: {
+        totalMana: sql`greatest(0, ${schema.userStats.totalMana} + ${d})`,
+      },
     })
-    .where(eq(schema.userStats.userId, userId))
     .returning({ totalMana: schema.userStats.totalMana });
   return row?.totalMana ?? 0;
 }
