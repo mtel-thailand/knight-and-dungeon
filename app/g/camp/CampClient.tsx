@@ -224,13 +224,11 @@ export default function CampClient() {
     const nextParty = applyRewardToParty(reward, pendingRewardParty);
     setPendingRewardParty(nextParty);
     setPlayerParty(nextParty);
-    setClaimedRewards((prev) => [...prev, reward]);
-    setRewardChoices((prev) => prev.filter((r) => r !== reward));
+    // Immediately advance — pick only one reward
+    advanceWave(nextParty, pendingRewardWave);
   }
 
-  function confirmRewards() {
-    const nextParty = pendingRewardParty;
-    const nextWave = pendingRewardWave;
+  function advanceWave(nextParty: PartyMemberInput[], nextWave: number) {
     setRewardChoices([]);
     setPendingRewardParty([]);
     setClaimedRewards([]);
@@ -384,7 +382,7 @@ export default function CampClient() {
     }
     if (enemies.length === 0) return "No valid enemy characters in monster pool (all missing battle stats).";
 
-    const req: ResolveRequest = { players: party, enemies };
+    const req: ResolveRequest = { players: party, enemies, spawnCount: camp.spawnCount ?? 0 };
     const outcome = await requestResolve(req);
     if (!outcome.ok) return outcome.error;
 
@@ -616,7 +614,7 @@ export default function CampClient() {
               <div className="camp-reward-scrim">
                 <div className="camp-reward-panel">
                   <h2 className="camp-reward-title">
-                    Pick a reward ({claimedRewards.length} / {claimedRewards.length + rewardChoices.length})
+                    Pick a reward
                   </h2>
                   <div className="camp-reward-cards">
                     {rewardChoices.map((reward) => (
@@ -635,32 +633,28 @@ export default function CampClient() {
                       </button>
                     ))}
                   </div>
-                  <div className="camp-reroll-row">
-                    <button
-                      className="camp-reroll-btn"
-                      type="button"
-                      disabled={
-                        rerollCount >= 3 ||
-                        (refs.controlsRef.current?.getManaCount?.() ?? 0) < rerollCount + 1
-                      }
-                      onClick={() => {
-                        const mana = refs.controlsRef.current?.getManaCount?.() ?? 0;
-                        const cost = rerollCount + 1;
-                        if (mana < cost) return;
-                        refs.controlsRef.current?.setManaCount?.(mana - cost);
-                        setRerollCount((prev) => prev + 1);
-                        // Re-roll only the remaining slots
-                        const count = rewardChoices.length;
-                        const all = pickRewardChoices(configRef.current?.battleRewards ?? []);
-                        setRewardChoices(all.slice(0, count));
-                      }}
-                    >
-                      Re-roll ({rerollCount + 1} mana)
-                    </button>
-                    <button className="camp-confirm-btn" type="button" onClick={confirmRewards}>
-                      Continue →
-                    </button>
-                  </div>
+                  {rerollCount < 3 ? (
+                    <div className="camp-reroll-row">
+                      <button
+                        className="camp-reroll-btn"
+                        type="button"
+                        disabled={(refs.controlsRef.current?.getManaCount?.() ?? 0) < rerollCount + 1}
+                        onClick={() => {
+                          const mana = refs.controlsRef.current?.getManaCount?.() ?? 0;
+                          const cost = rerollCount + 1;
+                          if (mana < cost) return;
+                          refs.controlsRef.current?.setManaCount?.(mana - cost);
+                          setRerollCount((prev) => prev + 1);
+                          // Re-roll only the remaining slots
+                          const count = rewardChoices.length;
+                          const all = pickRewardChoices(configRef.current?.battleRewards ?? []);
+                          setRewardChoices(all.slice(0, count));
+                        }}
+                      >
+                        Re-roll ({rerollCount + 1} mana)
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -717,6 +711,7 @@ export default function CampClient() {
               </div>
             ) : (
               <>
+                <a href="/auth/campaigns" className="camp-back-link">← Back</a>
                 <div className="camp-idle-badge">Campaign</div>
                 <h1 className="camp-idle-title">{activeCampaign?.name ?? "Campaign"}</h1>
                 <p className="camp-idle-sub">Auto-battle dungeon run</p>

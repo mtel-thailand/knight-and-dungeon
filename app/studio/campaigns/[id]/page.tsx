@@ -184,6 +184,35 @@ export default function CampaignEditPage() {
               />
             </label>
 
+            <label className="campaign-field">
+              <span className="campaign-field-label">Spawns per wave</span>
+              <input
+                className="campaign-input"
+                type="number"
+                min={CAMPAIGN_BOUNDS.spawnCount.min}
+                max={CAMPAIGN_BOUNDS.spawnCount.max}
+                step={1}
+                value={campaign.spawnCount ?? 0}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v))
+                    update(
+                      "spawnCount",
+                      Math.max(
+                        CAMPAIGN_BOUNDS.spawnCount.min,
+                        Math.min(
+                          CAMPAIGN_BOUNDS.spawnCount.max,
+                          v,
+                        ),
+                      ),
+                    );
+                }}
+              />
+              <p className="campaign-hint">
+                Extra enemies that spawn mid-fight (0 = none). Max 5 on board at once.
+              </p>
+            </label>
+
             <div className="campaign-field">
               <span className="campaign-field-label">
                 Monster pool ({campaign.monsterPool.length} selected)

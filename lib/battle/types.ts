@@ -92,10 +92,12 @@ export type CampaignDef = {
   waveCount: number; // number of consecutive waves (>= 1)
   monsterPool: string[]; // character ids enemies are spawned from across the waves
   isActive: boolean; // exactly one campaign is active at a time
+  spawnCount?: number; // how many extra enemies can spawn mid-wave (0 = none)
 };
 
 export const CAMPAIGN_BOUNDS = {
   waveCount: { min: 1, max: 50 },
+  spawnCount: { min: 0, max: 20 },
 } as const;
 
 // ---- Battle rewards (campaign wave-reward system) ----
@@ -197,6 +199,8 @@ export type BattleState = {
   units: Unit[];
   currentTime: number; // accumulated seconds
   events: BattleEvent[]; // emitted in resolution order (see note on `t`)
+  spawnsRemaining: number; // how many mid-fight enemy spawns are still available
+  nextSpawnAt: number; // battle time at which the next spawn triggers (Infinity if no more)
 };
 
 // Event log = the bridge to the replayer.
@@ -228,6 +232,16 @@ export type BattleEvent =
       targetHp: number;
     }
   | { t: number; kind: "death"; unitId: string; killedBy?: string }
+  | {
+      t: number;
+      kind: "spawn";
+      unitId: string;
+      characterId: string;
+      team: "enemy";
+      position: HexPosition;
+      hp: number;
+      maxHp: number;
+    }
   | { t: number; kind: "end"; result: "win" | "lose" | "draw" };
 
 export type UnitSnapshot = {
@@ -257,6 +271,8 @@ export type PartyMemberInput = {
 export type ResolveRequest = {
   players: PartyMemberInput[];
   enemies: PartyMemberInput[];
+  spawnCount?: number; // how many extra enemies can spawn mid-fight (0 = none)
+  spawnInterval?: number; // seconds between spawns (default SPAWN_INTERVAL)
 };
 
 export type ResolveResult = {
@@ -308,6 +324,7 @@ export const BOARD = {
 
 export const MAX_BATTLE_TIME = 60; // seconds; timeout resolves by higher remaining HP, else draw
 export const BATTLE_TICK = 0.25; // fixed timestep (deterministic)
+export const SPAWN_INTERVAL = 3; // seconds between mid-fight enemy spawns
 
 // ---- Map config (board layout persistence) ----
 

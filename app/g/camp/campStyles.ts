@@ -86,6 +86,20 @@ export const CAMP_PAGE_CSS = `
   background: rgba(255,255,255,0.18);
 }
 
+/* ── Back link ──────────────────────────────────────────────────────── */
+
+.camp-back-link {
+  position: absolute; top: 16px; left: 16px;
+  color: rgba(255,255,255,0.35);
+  font-size: 13px; font-weight: 600; text-decoration: none;
+  padding: 6px 12px; border-radius: 8px;
+  transition: color 0.12s, background 0.12s;
+}
+.camp-back-link:hover {
+  color: #e2e4ec;
+  background: rgba(255,255,255,0.06);
+}
+
 /* ── Start campaign button ─────────────────────────────────────────── */
 
 .camp-start-btn {

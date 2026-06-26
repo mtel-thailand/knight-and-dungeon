@@ -1358,13 +1358,119 @@ function BattleStage({
               const pos = su.node.getGlobalPosition();
               spawnCrystalShard(pos.x, pos.y, myId).catch(() => {});
             }
+          } else if (ev.kind === "spawn") {
+            // Create a new sprite for a unit that spawned mid-battle
+            tasks.push(
+              schedule([ev.unitId], async () => {
+                const charId = ev.characterId;
+                const cfg = config.characterConfigs?.[charId] ?? {};
+                const baseTint = typeof cfg.tint === "number" ? cfg.tint : 0xffffff;
+                const idleClip = clipForRole(charId, "idle");
+                const bp = basePose(charId);
+                const seed: any[] = idleClip.length ? idleClip : bp ? [bp] : [];
+                const hasArt = seed.length > 0;
+
+                let body: any;
+                let dispH: number;
+                if (hasArt) {
+                  body = new AnimatedSprite(seed);
+                  body.anchor.set(0.5, 0.9);
+                  const s = BODY_H / (body.height || BODY_H);
+                  body.scale.set(s, s);
+                  dispH = BODY_H;
+                  body.tint = baseTint;
+                  body.loop = true;
+                  body.animationSpeed = seed.length / (IDLE_DUR * TICKER_FPS);
+                  body.play();
+                } else {
+                  const rad = TW0 * 0.42;
+                  body = new Graphics()
+                    .circle(0, -rad, rad)
+                    .fill({ color: 0x7a2a3a, alpha: 0.95 })
+                    .stroke({ color: 0xffffff, width: 2, alpha: 0.45 });
+                  const letter = new Text({
+                    text: (charId[0] || "?").toUpperCase(),
+                    style: {
+                      fontFamily: "system-ui, sans-serif",
+                      fontSize: rad,
+                      fontWeight: "700",
+                      fill: 0xffffff,
+                    },
+                  });
+                  letter.anchor.set(0.5);
+                  letter.position.set(0, -rad);
+                  body.addChild(letter);
+                  dispH = rad * 2;
+                }
+
+                const absScale = Math.abs(body.scale.x) || 1;
+                const facing: 1 | -1 = -1; // enemies always face left
+                body.scale.x = absScale * facing;
+
+                const barBg = new Graphics();
+                const accent = new Graphics();
+                const hpFill = new Graphics();
+
+                const node = new Container();
+                node.addChild(body, barBg, accent, hpFill);
+                const p = pixelOf(ev.position.q, ev.position.r);
+                node.position.set(p.x, p.y);
+                node.zIndex = p.y;
+                node.alpha = 0; // start invisible, fade in
+                unitsLayer.addChild(node);
+
+                const su: SpriteUnit = {
+                  id: ev.unitId,
+                  team: "enemy",
+                  characterId: charId,
+                  node,
+                  body,
+                  hasArt,
+                  absScale,
+                  baseTint,
+                  dispH,
+                  barBg,
+                  accent,
+                  hpFill,
+                  maxHp: ev.maxHp,
+                  hp: ev.hp,
+                  q: ev.position.q,
+                  r: ev.position.r,
+                  dead: false,
+                  facing,
+                };
+                drawHealthBar(su);
+                sprites[ev.unitId] = su;
+                spawnedIds.add(ev.unitId);
+                onUnitHpChange?.(su.id, su.hp);
+
+                // Fade-in animation
+                await tween(360, (p) => {
+                  node.alpha = easeOutCubic(p);
+                }, myId);
+                setIdle(su);
+              }),
+            );
           }
           // "end" is handled by the replay loop (triggers the result screen).
         }
         await Promise.all(tasks);
       }
 
+      // Track sprites created by mid-fight spawn events so resetAll can clean them.
+      const spawnedIds = new Set<string>();
+
       function resetAll() {
+        // Destroy any spawned unit sprites first
+        for (const id of spawnedIds) {
+          const su = sprites[id];
+          if (su) {
+            su.node.removeFromParent();
+            try { su.node.destroy({ children: true }); } catch {}
+            delete sprites[id];
+          }
+        }
+        spawnedIds.clear();
         for (const id of Object.keys(sprites)) {
           const su = sprites[id];
           const init = initialById[id];

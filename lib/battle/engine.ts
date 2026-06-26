@@ -21,7 +21,7 @@ import type {
   ResolveRequest,
   ResolveResult,
 } from "./types";
-import { BATTLE_TICK, DEFAULT_ATTACK_TYPE } from "./types";
+import { BATTLE_TICK, DEFAULT_ATTACK_TYPE, SPAWN_INTERVAL } from "./types";
 import {
   VALID_HEXES,
   hexDistance,
@@ -29,6 +29,7 @@ import {
   isOccupied,
   getNextHexToward,
   tryPushUnit,
+  findEnemySpawnHex,
 } from "./hex";
 
 // ---- Skill registry ----
@@ -53,7 +54,7 @@ export const SKILLS: Record<string, Skill> = {
 // per battle (`${team}-${characterId}-${index}`) — never from a module global — so
 // re-resolving the same request yields identical ids and events. Units are
 // concatenated player-first (mutation order: players resolve before enemies).
-export function createBattle(players: Unit[], enemies: Unit[]): BattleState {
+export function createBattle(players: Unit[], enemies: Unit[], spawnCount: number = 0): BattleState {
   const assign = (units: Unit[], team: Team): Unit[] =>
     units.map((u, i) => ({ ...u, team, id: `${team}-${u.characterId}-${i}` }));
 
@@ -62,6 +63,8 @@ export function createBattle(players: Unit[], enemies: Unit[]): BattleState {
     units: [...assign(players, "player"), ...assign(enemies, "enemy")],
     currentTime: 0,
     events: [],
+    spawnsRemaining: spawnCount,
+    nextSpawnAt: spawnCount > 0 ? SPAWN_INTERVAL : Infinity,
   };
 }
 
@@ -372,6 +375,84 @@ export function computeExpGains(battle: BattleState): Record<string, number> {
   return expGains;
 }
 
+// ---- Mid-fight spawn ----
+
+// Pick a character id for a spawned enemy: cycle through existing enemy
+// characterIds in deterministic (first-seen) order.
+function pickSpawnCharacterId(battle: BattleState): string {
+  const seen: string[] = [];
+  const added = new Set<string>();
+  for (const u of battle.units) {
+    if (u.team === "enemy" && !added.has(u.characterId)) {
+      added.add(u.characterId);
+      seen.push(u.characterId);
+    }
+  }
+  // Cycle through existing enemy types deterministically
+  return seen[((battle.events.filter((e) => e.kind === "spawn").length) + 1) % seen.length] ?? seen[0] ?? "enemy";
+}
+
+// Spawn one enemy unit mid-fight. Finds an unoccupied hex, creates the unit,
+// emits a spawn event. Returns true if a spawn happened.
+function spawnEnemy(battle: BattleState): boolean {
+  if (battle.spawnsRemaining <= 0) return false;
+
+  // Check board cap: max 5 enemies at a time
+  const enemiesAlive = battle.units.filter((u) => u.team === "enemy" && !u.isDead).length;
+  if (enemiesAlive >= 5) return false;
+
+  const hex = findEnemySpawnHex(battle.units);
+  if (!hex) return false; // board full
+
+  // Pick a template from existing enemies
+  const charId = pickSpawnCharacterId(battle);
+  const template = battle.units.find((u) => u.team === "enemy" && u.characterId === charId);
+  if (!template) return false;
+
+  // Create the new unit
+  const spawnIndex = battle.units.filter((u) => u.team === "enemy").length;
+  const newUnit: Unit = {
+    id: `enemy-${charId}-${spawnIndex}`,
+    team: "enemy",
+    characterId: charId,
+    hp: template.maxHp,
+    maxHp: template.maxHp,
+    attack: template.attack,
+    defense: template.defense,
+    actionSpeed: template.actionSpeed,
+    actionGauge: 0,
+    range: template.range,
+    attackType: template.attackType,
+    spells: template.spells.map((s) => ({ ...s })),
+    skills: [...template.skills],
+    position: { q: hex.q, r: hex.r },
+    cooldowns: {},
+    isDead: false,
+  };
+
+  battle.units.push(newUnit);
+  battle.spawnsRemaining--;
+
+  battle.events.push({
+    t: battle.currentTime,
+    kind: "spawn",
+    unitId: newUnit.id,
+    characterId: charId,
+    team: "enemy",
+    position: { q: hex.q, r: hex.r },
+    hp: newUnit.hp,
+    maxHp: newUnit.maxHp,
+  });
+
+  if (battle.spawnsRemaining <= 0) {
+    battle.nextSpawnAt = Infinity;
+  } else {
+    battle.nextSpawnAt = battle.currentTime + SPAWN_INTERVAL;
+  }
+
+  return true;
+}
+
 // ---- Battle loop ----
 
 // Advance the battle by `dt` seconds. Each living unit decays cooldowns, fills its
@@ -398,6 +479,11 @@ export function updateBattle(battle: BattleState, dt: number): void {
       checkBattleEnd(battle);
       if (battle.status !== "running") return;
     }
+  }
+
+  // Mid-fight spawn check: spawn enemies on a timer
+  if (battle.spawnsRemaining > 0 && battle.currentTime >= battle.nextSpawnAt) {
+    spawnEnemy(battle);
   }
 
   checkBattleEnd(battle); // timeout guard on idle ticks
@@ -451,7 +537,7 @@ export function resolveBattle(req: ResolveRequest): ResolveResult {
   const players = req.players.map((p) => buildUnit(p, "player"));
   const enemies = req.enemies.map((e) => buildUnit(e, "enemy"));
 
-  const battle = createBattle(players, enemies);
+  const battle = createBattle(players, enemies, req.spawnCount ?? 0);
 
   // Capture the opening board BEFORE any event is emitted, then run.
   const initialState = snapshotInitial(battle);

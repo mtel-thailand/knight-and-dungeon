@@ -180,7 +180,13 @@ export async function POST(req: NextRequest) {
   if (typeof body !== "object" || body === null) {
     return NextResponse.json({ error: "expected an object" }, { status: 400 });
   }
-  const { players: rawPlayers, enemies: rawEnemies } = body as Record<string, unknown>;
+  const { players: rawPlayers, enemies: rawEnemies, spawnCount: rawSpawnCount } = body as Record<string, unknown>;
+
+  // Optional spawnCount for mid-fight spawning (campaign waves only).
+  const spawnCount =
+    typeof rawSpawnCount === "number" && Number.isFinite(rawSpawnCount)
+      ? Math.max(0, Math.min(20, Math.round(rawSpawnCount)))
+      : undefined;
 
   const players = sanitizeParty(rawPlayers, "players", BOARD.playerRow);
   if (typeof players === "string") {
@@ -204,6 +210,7 @@ export async function POST(req: NextRequest) {
   const request: ResolveRequest = {
     players: canonicalize(players),
     enemies: canonicalize(enemies),
+    ...(spawnCount !== undefined ? { spawnCount } : {}),
   };
 
   const result = resolveBattle(request);

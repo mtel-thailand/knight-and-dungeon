@@ -94,6 +94,21 @@ export function getPushTarget(
   return { q: target.q + dir.q, r: target.r + dir.r };
 }
 
+// Find the best unoccupied hex for spawning a new enemy unit.
+// Prefers hexes on the enemy half (lower r), filling from the back row forward,
+// then left-to-right within each row. Returns null if the entire board is full.
+export function findEnemySpawnHex(units: Unit[]): HexPosition | null {
+  // Sort valid hexes: enemy rows first (lowest r), then left to right (q).
+  const candidates = [...VALID_HEXES].sort((a, b) => {
+    if (a.r !== b.r) return a.r - b.r;
+    return a.q - b.q;
+  });
+  for (const hex of candidates) {
+    if (!isOccupied(hex, units)) return { q: hex.q, r: hex.r };
+  }
+  return null; // board full
+}
+
 // Try to push `target` away from `source`. Blocked (off-map OR occupied) = stays.
 // Mutates target.position in place when the push lands.
 export function tryPushUnit(source: Unit, target: Unit, units: Unit[]): void {
