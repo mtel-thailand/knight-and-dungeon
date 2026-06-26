@@ -27,16 +27,16 @@ interface Wave { enemies: string[]; spawnCount: number }
 const CAMPAIGNS: { id: string; name: string; difficulty: number; slots: number; waves: Wave[] }[] = [
   {
     id: "camp-easy", name: "The Rat Warrens", difficulty: 1, slots: 1,
-    // 1 hero, ~73% win rate
+    // Tutorial — always winnable. Introduces spawn mechanic on wave 2.
     waves: [
-      { enemies: ["big-green"],                          spawnCount: 0 },
-      { enemies: ["big-green"],                          spawnCount: 0 },
-      { enemies: ["big-green"],                          spawnCount: 1 },
+      { enemies: ["little-green", "little-green"],                          spawnCount: 0 },
+      { enemies: ["little-green", "little-green", "little-green"],          spawnCount: 1 },
+      { enemies: ["little-green", "little-green", "little-green", "little-green"], spawnCount: 2 },
     ],
   },
   {
-    id: "camp-normal", name: "The Goblin Tunnels", difficulty: 2, slots: 2,
-    // 2 heroes, ~50% win rate
+    id: "camp-normal", name: "The Goblin Tunnels", difficulty: 2, slots: 1,
+    // 1 hero
     waves: [
       { enemies: ["big-green", "little-green", "little-green"],     spawnCount: 2 },
       { enemies: ["big-green", "little-green"],                     spawnCount: 2 },
@@ -44,8 +44,8 @@ const CAMPAIGNS: { id: string; name: string; difficulty: number; slots: number; 
     ],
   },
   {
-    id: "camp-hard", name: "The Dark Bastille", difficulty: 3, slots: 3,
-    // 3 heroes, ~4% win rate
+    id: "camp-hard", name: "The Dark Bastille", difficulty: 3, slots: 1,
+    // 1 hero
     waves: [
       { enemies: ["big-green", "big-green"],                        spawnCount: 2 },
       { enemies: ["big-green", "big-green"],                        spawnCount: 3 },
