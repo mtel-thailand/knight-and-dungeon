@@ -1033,6 +1033,36 @@ export default function SpellEditPage() {
               />
             </label>
 
+            <label className="spell-field">
+              <span className="spell-field-label">Price (mana to buy)</span>
+              <input
+                className="spell-input"
+                type="number"
+                min={SPELL_BOUNDS.price.min}
+                max={SPELL_BOUNDS.price.max}
+                step={1}
+                value={spell.price}
+                onChange={(e) =>
+                  update("price", Math.round(numOr(e.target.value, spell.price)))
+                }
+              />
+            </label>
+
+            <label className="spell-field">
+              <span className="spell-field-label">Mana cost (per cast)</span>
+              <input
+                className="spell-input"
+                type="number"
+                min={SPELL_BOUNDS.manaCost.min}
+                max={SPELL_BOUNDS.manaCost.max}
+                step={1}
+                value={spell.manaCost}
+                onChange={(e) =>
+                  update("manaCost", Math.round(numOr(e.target.value, spell.manaCost)))
+                }
+              />
+            </label>
+
             <div className="spell-edit-actions">
               <button
                 className={"spell-btn primary" + (saved ? " saved" : "")}

@@ -9,7 +9,9 @@ export const DETAIL_STYLES = `
 
 .char-detail-page {
   display: flex; flex-direction: column;
-  width: 100vw; min-height: 100vh;
+  width: 100vw; height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
   font-family: system-ui, -apple-system, sans-serif;
   color: #c8d6e5;
   background:
@@ -17,7 +19,6 @@ export const DETAIL_STYLES = `
     radial-gradient(1000px 600px at 50% 110%, rgba(139,92,246,0.05), transparent 60%),
     linear-gradient(180deg, #0a0b12 0%, #0d0e18 50%, #080911 100%);
   position: relative;
-  overflow-x: hidden;
 }
 
 .char-detail-scanlines {

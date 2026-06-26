@@ -1,5 +1,3 @@
-"use client";
-
 import dynamic from "next/dynamic";
 
 const CharacterDetailClient = dynamic(
@@ -7,10 +5,11 @@ const CharacterDetailClient = dynamic(
   { ssr: false },
 );
 
-export default function CharacterDetailPage({
+export default async function CharacterDetailPage({
   params,
 }: {
-  params: { characterId: string };
+  params: Promise<{ characterId: string }>;
 }) {
-  return <CharacterDetailClient characterId={params.characterId} />;
+  const { characterId } = await params;
+  return <CharacterDetailClient characterId={characterId} />;
 }
