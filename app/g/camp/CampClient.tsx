@@ -802,19 +802,11 @@ export default function CampClient() {
                         className={`camp-char-card${on ? " on" : ""}`}
                         disabled={!hasStats}
                         onClick={() => {
-                          setSelectedCharIds((prev) =>
-                            on
-                              ? prev.filter((id) => id !== ch.id)
-                              : [...prev, ch.id]
-                          );
+                          if (on) return; // already selected — no action (prevents emptying the party / error)
+                          const next = [...selectedCharIds, ch.id];
+                          setSelectedCharIds(next);
                           const cfg = configRef.current;
-                          if (cfg) setPlayerParty(buildParty(
-                            on
-                              ? selectedCharIds.filter((id) => id !== ch.id)
-                              : [...selectedCharIds, ch.id],
-                            cfg,
-                            userSpells,
-                          ));
+                          if (cfg) setPlayerParty(buildParty(next, cfg, userSpells));
                         }}
                       >
                         <div className="camp-char-avatar">
