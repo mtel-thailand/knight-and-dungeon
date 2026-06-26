@@ -1,0 +1,1 @@
+DROP INDEX "idx_campaigns_one_active";

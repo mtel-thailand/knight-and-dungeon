@@ -94,8 +94,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     spawn_count  INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_campaigns_one_active
-    ON campaigns (is_active) WHERE is_active = 1;
+-- Campaigns: single active constraint removed — all 3 campaigns are playable
 
 CREATE TABLE IF NOT EXISTS character_spells (
     character_id TEXT NOT NULL,

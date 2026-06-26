@@ -5,7 +5,6 @@ import {
   timestamp,
   integer,
   doublePrecision,
-  uniqueIndex,
   primaryKey,
   check,
 } from "drizzle-orm/pg-core";
@@ -155,11 +154,6 @@ export const campaigns = pgTable(
     isActive: integer("is_active").notNull().default(0),
     spawnCount: integer("spawn_count").notNull().default(0),
   },
-  (t) => [
-    uniqueIndex("idx_campaigns_one_active")
-      .on(t.isActive)
-      .where(sql`${t.isActive} = 1`),
-  ],
 );
 
 // ---------------------------------------------------------------------------
