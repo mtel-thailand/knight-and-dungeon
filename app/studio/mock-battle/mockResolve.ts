@@ -1,13 +1,14 @@
 import type {
   BattleEvent,
   HexPosition,
+  ManaState,
   PartyMemberInput,
   ResolveRequest,
   ResolveResult,
   Team,
   UnitStats,
 } from "@/lib/battle/types";
-import { BATTLE_TICK, BOARD, MAX_BATTLE_TIME, STAT_BOUNDS } from "@/lib/battle/types";
+import { BATTLE_TICK, BOARD, MAX_BATTLE_TIME, STAT_BOUNDS, TANK_MANA_MAX } from "@/lib/battle/types";
 import { getHexRowsFromCounts } from "../studioHelpers";
 
 // =============================================================================
@@ -90,6 +91,15 @@ export function mockResolve(req: ResolveRequest): ResolveResult {
     };
   };
 
+  // ---- Per-side mana tracking (mirrors engine) ----
+  const parseMana = (v: unknown): number =>
+    Number.isFinite(v) ? clamp(Math.round(v as number), 0, TANK_MANA_MAX) : 0;
+  const mana: ManaState = {
+    player: parseMana(req.startingMana?.player),
+    enemy: parseMana(req.startingMana?.enemy),
+  };
+  const initialMana: ManaState = { ...mana };
+
   const units: SU[] = [
     ...req.players.map((m, i) => mk(m, "player", i)),
     ...req.enemies.map((m, i) => mk(m, "enemy", i)),
@@ -169,8 +179,15 @@ export function mockResolve(req: ResolveRequest): ResolveResult {
         }
         if (target.hp <= 0 && !target.dead) {
           target.dead = true;
+          // Award +1 mana to the OPPOSING side (cap TANK_MANA_MAX), mirroring engine
+          const awardTeam: Team = target.team === "enemy" ? "player" : "enemy";
+          const delta = 1;
+          mana[awardTeam] = Math.min(TANK_MANA_MAX, mana[awardTeam] + delta);
           // Same `t` as the blow above — emitted AFTER it on purpose.
-          events.push({ t, kind: "death", unitId: target.id });
+          events.push({
+            t, kind: "death", unitId: target.id,
+            manaAwarded: { team: awardTeam, delta, manaAfter: mana[awardTeam] },
+          });
         }
       } else {
         const from = { q: u.q, r: u.r };
@@ -206,5 +223,6 @@ export function mockResolve(req: ResolveRequest): ResolveResult {
     result,
     initialState: { hexes: genHexes(), units: initialUnits },
     events,
+    mana: { initial: initialMana, final: { ...mana } },
   };
 }

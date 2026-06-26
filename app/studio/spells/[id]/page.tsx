@@ -4,12 +4,12 @@
 // Loads the spell + the animation catalog from GET /api/config (spell found by
 // the route id). A <canvas> preview plays the spell's animation on a mock-
 // battle-like hex board, driven live by the playback config (FPS / Scale X /
-// Scale Y / Loop). Edits Name / Power / Cooldown / the
+// Scale Y / Loop). Edits Name / Type / Power / Cooldown / the
 // playback config locally, then Save → POST /api/config/spell { spell }. The
 // animation itself is set ONLY by uploading an MP4 ("Convert & assign" →
 // /api/spell/animation, which returns the new catalog key; the catalog is then
-// refreshed so the preview picks it up). The spell's `type` ("attack") is
-// preserved as loaded. Missing id is handled.
+// refreshed so the preview picks it up). The spell's `type` (attack/heal) is
+// editable via a dropdown. Missing id is handled.
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -24,6 +24,7 @@ import {
   SPELL_FADE_MS,
   DEFAULT_SPELL_TRANSITION,
   SPELL_TRANSITIONS,
+  SPELL_TYPES,
 } from "@/lib/battle/types";
 import { getHexRowsFromCounts, isoHex, isoPos, assetUrl } from "../../studioHelpers";
 import type { BootstrapPayload, CatalogEntry } from "../../studioTypes";
@@ -945,6 +946,26 @@ export default function SpellEditPage() {
               />
             </label>
 
+            <label className="spell-field">
+              <span className="spell-field-label">Type</span>
+              <select
+                className="spell-select"
+                value={spell.type}
+                onChange={(e) => {
+                  const t = e.target.value;
+                  if ((SPELL_TYPES as readonly string[]).includes(t)) {
+                    update("type", t as SpellDef["type"]);
+                  }
+                }}
+              >
+                {SPELL_TYPES.map((st) => (
+                  <option key={st} value={st}>
+                    {st === "attack" ? "Attack" : "Heal"}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <div className="spell-upload">
               <span className="spell-field-label">Convert MP4 → animation</span>
               <div className="spell-upload-row">
@@ -983,9 +1004,11 @@ export default function SpellEditPage() {
             </div>
 
             <label className="spell-field">
-              <span className="spell-field-label">Power</span>
+              <span className="spell-field-label">
+                Power{String(spell.type) === "heal" ? " (ignored for heal)" : ""}
+              </span>
               <input
-                className="spell-input"
+                className={"spell-input" + (String(spell.type) === "heal" ? " spell-input-muted" : "")}
                 type="number"
                 min={SPELL_BOUNDS.power.min}
                 max={SPELL_BOUNDS.power.max}

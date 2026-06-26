@@ -22,6 +22,7 @@ import {
   DEFAULT_SPELL_FPS,
   DEFAULT_SPELL_TRANSITION,
   SPELL_FADE_MS,
+  TANK_MANA_MAX,
 } from "@/lib/battle/types";
 import { isoPos, getHexRowsFromCounts, assetUrl, playSound } from "../studioHelpers";
 import { createBattleClips } from "./battleClips";
@@ -435,6 +436,16 @@ function BattleStage({
       const manaTank = ctx!.manaTank;
       const manaCountText = ctx!.manaCountText;
       const crystalShardTex = ctx!.crystalShardTex;
+
+      // ---- Mana gauge helper (engine-authoritative sync) ----
+      const MANA_FRAMES_VALUES = [33, 37, 41, 52, 63, 74, 85, 96, 96, 107];
+      function setManaGauge(n: number) {
+        const clamped = Math.max(0, Math.min(TANK_MANA_MAX, Math.round(n)));
+        ctx!.manaCount = clamped;
+        if (manaCountText) manaCountText.text = `${clamped}/${TANK_MANA_MAX}`;
+        const idx = Math.min(clamped - 1, MANA_FRAMES_VALUES.length - 1);
+        if (ctx!.manaTank) ctx!.manaTank.currentFrame = Math.min(107, idx >= 0 ? MANA_FRAMES_VALUES[idx] : 0);
+      }
 
       const catalog: any[] = config.animations ?? [];
       const framesByKey: Record<string, any[]> = {};
@@ -888,14 +899,15 @@ function BattleStage({
       function spawnDamage(
         su: SpriteUnit,
         amount: number,
-        kind: "attack" | "skill",
+        kind: "attack" | "skill" | "heal",
         myId: number,
       ) {
         // Read the live config at spawn time — the panel mutates this ref, so
         // each new number reflects the latest knobs without an effect rebuild.
         const cfg = dmgCfgRef.current;
+        const isHeal = kind === "heal";
         const t = new Text({
-          text: kind === "skill" ? `${amount}!` : `${amount}`,
+          text: isHeal ? `+${amount}` : kind === "skill" ? `${amount}!` : `${amount}`,
           style: {
             fontFamily: dmgFont.style.fontFamily,
             fontSize: (kind === "skill" ? cfg.sizeSkill : cfg.sizeNormal) * TW0,
@@ -1324,6 +1336,10 @@ function BattleStage({
             const src = sprites[ev.sourceId];
             const tgt = sprites[ev.targetId];
             const ids = [ev.sourceId, ev.targetId].filter((id) => sprites[id]);
+            // Sync mana gauge SYNCHRONOUSLY in emitted-event order (before any
+            // animation delay), so a spellcast→death in the same beat lands the
+            // gauge on the death value — not the spellcast value.
+            if (ev.manaTeam === "player") setManaGauge(ev.manaAfter);
             tasks.push(
               schedule(ids, async () => {
                 // Cast wind-up reuses the attack pose (+ facing), THEN the
@@ -1338,11 +1354,17 @@ function BattleStage({
                 }
                 await flyProjectile(ev.spellId, ev.from, ev.to, myId);
                 if (destroyed || genId !== myId || !tgt) return;
-                await Promise.all([
-                  updateHp(tgt, ev.targetHp, myId),
-                  flashHit(tgt, myId),
-                ]);
-                spawnDamage(tgt, ev.damage, "skill", myId); // reuse gold "!" style
+                if (ev.spellType === "attack") {
+                  await Promise.all([
+                    updateHp(tgt, ev.targetHp, myId),
+                    flashHit(tgt, myId),
+                  ]);
+                  spawnDamage(tgt, ev.damage, "skill", myId);
+                } else {
+                  // heal — green floating number, no hit flash, projectile flies to target
+                  await updateHp(tgt, ev.targetHp, myId);
+                  spawnDamage(tgt, ev.healAmount, "heal", myId);
+                }
               }),
             );
           } else if (ev.kind === "death") {

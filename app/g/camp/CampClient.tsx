@@ -110,9 +110,11 @@ function buildParty(charIds: string[], config: BootstrapConfig): PartyMemberInpu
 
 /** Resolve a character's owned spell ids -> the engine's SpellInput configs
  *  (mirrors mock-battle's startFight). Without this, camp units fight spell-less. */
-function spellsFor(characterId: string, config: BootstrapConfig): SpellInput[] {
+function spellsFor(characterId: string, config: BootstrapConfig, extraSpellIds?: string[]): SpellInput[] {
   const byId = new Map((config.spells ?? []).map((s) => [s.id, s] as const));
-  return (config.characterSpells?.[characterId] ?? [])
+  const ids = new Set(config.characterSpells?.[characterId] ?? []);
+  if (extraSpellIds) for (const id of extraSpellIds) ids.add(id);
+  return [...ids]
     .map((id) => byId.get(id))
     .filter((s): s is SpellDef => !!s)
     .map((s) => ({
@@ -121,6 +123,7 @@ function spellsFor(characterId: string, config: BootstrapConfig): SpellInput[] {
       cooldown: s.cooldown,
       type: s.type,
       animationKey: s.animationKey,
+      manaCost: s.manaCost,
     }));
 }
 

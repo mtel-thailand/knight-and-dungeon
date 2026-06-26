@@ -1,0 +1,1 @@
+ALTER TABLE "user_characters" ADD COLUMN "spell_hp_threshold" integer DEFAULT 50 NOT NULL;

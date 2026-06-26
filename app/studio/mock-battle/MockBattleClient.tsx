@@ -546,6 +546,7 @@ export default function MockBattleClient() {
           cooldown: s.cooldown,
           type: s.type,
           animationKey: s.animationKey,
+          manaCost: s.manaCost,
         }));
     const toInput =
       (team: Team) =>

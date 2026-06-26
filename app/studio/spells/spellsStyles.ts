@@ -29,6 +29,7 @@ export const SPELLS_PAGE_CSS = `
   .spells-page .spell-input:focus {
     border-color: rgba(255,255,255,0.32); background: rgba(255,255,255,0.08);
   }
+  .spells-page .spell-input-muted { opacity: 0.5; }
   .spells-page .spell-anim-current {
     font-size: 13px; font-family: 'SF Mono','Fira Code',monospace; color: rgba(255,255,255,0.72);
     background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);

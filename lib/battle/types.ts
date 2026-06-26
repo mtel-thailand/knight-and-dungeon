@@ -10,6 +10,12 @@ export type HexPosition = { q: number; r: number };
 
 export type Team = "player" | "enemy";
 
+export const TANK_MANA_MAX = 10;
+export const TANK_MANA_MIN = 0;
+export type ManaState = Record<Team, number>;
+
+export const DEFAULT_SPELL_HP_THRESHOLD = 50;
+
 // Per-character combat stats. Source of truth = character_battle_stats (SQLite),
 // loaded as defaults into the party builder, editable, sent in the resolve payload.
 // Attack type gates targeting: a "melee" unit cannot attack a target sharing its
@@ -25,8 +31,8 @@ export const DEFAULT_ATTACK_TYPE: AttackType = "melee";
 // power (damage = floor(caster.attack * power), IGNORES defense), and a cooldown
 // (seconds). Characters own a list of spell ids; magic fires any-position →
 // any-position (no range/row restriction).
-export type SpellType = "attack";
-export const SPELL_TYPES: readonly SpellType[] = ["attack"] as const;
+export type SpellType = "attack" | "heal";
+export const SPELL_TYPES: readonly SpellType[] = ["attack", "heal"] as const;
 export const DEFAULT_SPELL_TYPE: SpellType = "attack";
 
 // CMS entity, persisted in `spells`, surfaced in GET /api/config as `spells`.
@@ -53,6 +59,8 @@ export type SpellDef = {
   rotation?: number; // orientation offset added to the aim, degrees
   transitionIn?: SpellTransition; // projectile fade-in style (default "fade")
   transitionOut?: SpellTransition; // projectile fade-out style (default "fade")
+  price: number; // persistent shop purchase cost (CMS only, NOT engine)
+  manaCost: number; // in-battle Tank mana spent per cast (integer 1..5)
 };
 
 // What travels to the PURE engine per member (the engine can't read the DB).
@@ -62,6 +70,7 @@ export type SpellInput = {
   cooldown: number;
   type: SpellType;
   animationKey: string;
+  manaCost: number; // in-battle Tank mana spent per cast (integer 1..5)
 };
 
 export const SPELL_BOUNDS = {
@@ -74,6 +83,8 @@ export const SPELL_BOUNDS = {
   offsetX: { min: -200, max: 200 },
   offsetY: { min: -200, max: 200 },
   rotation: { min: -360, max: 360 },
+  price: { min: 0, max: 100000 },
+  manaCost: { min: 1, max: 5 },
 } as const;
 export const MAX_SPELLS_PER_UNIT = 8;
 export const DEFAULT_SPELL_FPS = 12; // projectile playback fps when a spell has no `fps`
@@ -188,6 +199,7 @@ export type Unit = {
   position: HexPosition;
   cooldowns: Record<string, number>;
   isDead: boolean;
+  spellHpThreshold: number; // heal-trigger threshold percent (0..100; default DEFAULT_SPELL_HP_THRESHOLD set in buildUnit)
 };
 
 export type Skill = {
@@ -216,6 +228,7 @@ export type BattleState = {
   events: BattleEvent[]; // emitted in resolution order (see note on `t`)
   spawnsRemaining: number; // how many mid-fight enemy spawns are still available
   nextSpawnAt: number; // battle time at which the next spawn triggers (Infinity if no more)
+  mana: ManaState;
 };
 
 // Event log = the bridge to the replayer.
@@ -238,6 +251,7 @@ export type BattleEvent =
   | {
       t: number;
       kind: "spellcast";
+      spellType: "attack";
       sourceId: string;
       targetId: string;
       spellId: string;
@@ -245,8 +259,26 @@ export type BattleEvent =
       to: HexPosition; // target hex (projectile end)
       damage: number;
       targetHp: number;
+      manaTeam: Team;
+      manaCost: number;
+      manaAfter: number;
     }
-  | { t: number; kind: "death"; unitId: string; killedBy?: string }
+  | {
+      t: number;
+      kind: "spellcast";
+      spellType: "heal";
+      sourceId: string;
+      targetId: string;
+      spellId: string;
+      from: HexPosition; // caster hex (projectile start)
+      to: HexPosition; // target hex (projectile end)
+      healAmount: number;
+      targetHp: number; // target HP after heal
+      manaTeam: Team;
+      manaCost: number;
+      manaAfter: number;
+    }
+  | { t: number; kind: "death"; unitId: string; killedBy?: string; manaAwarded: { team: Team; delta: number; manaAfter: number } }
   | {
       t: number;
       kind: "spawn";
@@ -281,6 +313,7 @@ export type PartyMemberInput = {
   position: HexPosition; // deploy hex
   spells?: SpellInput[]; // owned spell configs (optional; default []); route clamps/validates
   currentHp?: number; // optional starting-HP override (campaign wave carryover), clamped [1,stats.hp]; ABSENT ⇒ buildUnit defaults to stats.hp (byte-identical to pre-campaign requests)
+  spellHpThreshold?: number; // heal-trigger threshold percent 0..100 (default DEFAULT_SPELL_HP_THRESHOLD); caster heals an ally when ally.hp% < this value
 };
 
 export type ResolveRequest = {
@@ -291,6 +324,7 @@ export type ResolveRequest = {
   userId?: string; // for persisting battle logs
   campaignId?: string; // for persisting battle logs
   waveIndex?: number; // for persisting battle logs
+  startingMana?: Partial<ManaState>;
 };
 
 export type ResolveResult = {
@@ -299,6 +333,7 @@ export type ResolveResult = {
   finalState?: BattleSnapshot; // closing board after the sim (survivor HP for campaign wave carryover); resolveBattle always emits it, the client mock-resolve path may omit it
   events: BattleEvent[];
   expGains?: Record<string, number>; // unitId → EXP gained from kills (killed enemy's maxHp)
+  mana: { initial: ManaState; final: ManaState };
 };
 
 // ---- CMS / management contract ----
