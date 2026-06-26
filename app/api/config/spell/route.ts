@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     id: spell.id,
     name: spell.name,
     animationKey: typeof spell.animationKey === "string" ? spell.animationKey : null,
-    type: spell.type === "attack" ? "attack" : undefined,
+    type: spell.type === "heal" ? "heal" : spell.type === "attack" ? "attack" : undefined,
     power: fin(spell.power),
     cooldown: fin(spell.cooldown),
     fps: fin(spell.fps),

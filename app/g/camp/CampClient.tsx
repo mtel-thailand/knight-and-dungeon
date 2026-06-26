@@ -91,8 +91,9 @@ type Phase = "idle" | "fighting" | "reward" | "won" | "lost";
 /**
  * Build a player party from selected character IDs.
  * Each character is positioned in a deploy hex slot.
+ * Pass extraUserSpells (user-purchased, per-character) so owned spells reach the battle.
  */
-function buildParty(charIds: string[], config: BootstrapConfig): PartyMemberInput[] {
+function buildParty(charIds: string[], config: BootstrapConfig, extraUserSpells?: Record<string, string[]>): PartyMemberInput[] {
   const party: PartyMemberInput[] = [];
   for (let i = 0; i < charIds.length && i < BOARD.maxPerSide; i++) {
     const charId = charIds[i];
@@ -101,7 +102,7 @@ function buildParty(charIds: string[], config: BootstrapConfig): PartyMemberInpu
     party.push({
       characterId: charId,
       stats: { ...s, attackType: s.attackType ?? "melee", skills: s.skills ?? [] },
-      spells: spellsFor(charId, config),
+      spells: spellsFor(charId, config, extraUserSpells?.[charId]),
       position: deployHex("player", i),
     });
   }
@@ -150,6 +151,7 @@ export default function CampClient() {
   const [claimedRewards, setClaimedRewards] = useState<BattleRewardDef[]>([]);
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>(["blue"]);
   const [userCharacters, setUserCharacters] = useState<Record<string, { level: number; exp: number; avatarUrl?: string }>>({});
+  const [userSpells, setUserSpells] = useState<Record<string, string[]>>({});
   const [livePlayerHp, setLivePlayerHp] = useState<Record<string, number>>({});
   const [resolvingWave, setResolvingWave] = useState(false);
 
@@ -310,7 +312,7 @@ export default function CampClient() {
         setActiveCampaign(camp);
 
         // Build initial player party from selected characters
-        setPlayerParty(buildParty(selectedCharIds, cfg));
+        setPlayerParty(buildParty(selectedCharIds, cfg, userSpells));
         setLoading(false);
       } catch {
         // Offline — empty config
@@ -325,15 +327,30 @@ export default function CampClient() {
     return () => { cancelled = true; };
   }, []);
 
-  // ── Fetch user's owned characters (runs when userId + config are ready) ──
+  // ── Fetch user's owned characters AND purchased spells ──────────────────
   useEffect(() => {
     if (!userId || !config) return;
     let cancelled = false;
     (async () => {
       try {
-        const ucRes = await fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`);
+        const [ucRes, usRes] = await Promise.all([
+          fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`),
+          fetch(`/api/user/spells?userId=${encodeURIComponent(userId)}`),
+        ]);
         const ucData = await ucRes.json();
+        const usData = await usRes.json();
         if (cancelled) return;
+
+        // Build userSpells map from the API response
+        const newUserSpells: Record<string, string[]> = {};
+        if (usData.ok && Array.isArray(usData.spells)) {
+          for (const entry of usData.spells) {
+            if (!newUserSpells[entry.characterId]) newUserSpells[entry.characterId] = [];
+            newUserSpells[entry.characterId].push(entry.spellId);
+          }
+        }
+        setUserSpells(newUserSpells);
+
         if (ucData.ok && Array.isArray(ucData.characters)) {
           const owned: Record<string, { level: number; exp: number; avatarUrl?: string }> = {};
           const ownedIds: string[] = [];
@@ -344,7 +361,7 @@ export default function CampClient() {
           setUserCharacters(owned);
           if (ownedIds.length > 0) {
             setSelectedCharIds(ownedIds.slice(0, BOARD.maxPerSide));
-            setPlayerParty(buildParty(ownedIds.slice(0, BOARD.maxPerSide), config));
+            setPlayerParty(buildParty(ownedIds.slice(0, BOARD.maxPerSide), config, newUserSpells));
           }
         }
       } catch { /* server unavailable */ }
@@ -567,18 +584,29 @@ export default function CampClient() {
             ? data.campaigns.find((c: CampaignDef) => c.isActive)
             : null) ?? null;
         setActiveCampaign(camp);
-        setPlayerParty(buildParty(selectedCharIds, cfg));
-        // Re-fetch user's owned characters
+        setPlayerParty(buildParty(selectedCharIds, cfg, userSpells));
+        // Re-fetch user's owned characters AND purchased spells
         if (userId) {
-          fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`)
-            .then((r) => r.json())
-            .then((ucData) => {
-              if (ucData.ok && Array.isArray(ucData.characters)) {
-                const owned: Record<string, { level: number; exp: number; avatarUrl?: string }> = {};
-                for (const c of ucData.characters) owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0, avatarUrl: c.avatarUrl };
-                setUserCharacters(owned);
+          Promise.all([
+            fetch(`/api/user/characters?userId=${encodeURIComponent(userId)}`).then((r) => r.json()),
+            fetch(`/api/user/spells?userId=${encodeURIComponent(userId)}`).then((r) => r.json()),
+          ]).then(([ucData, usData]) => {
+            if (ucData.ok && Array.isArray(ucData.characters)) {
+              const owned: Record<string, { level: number; exp: number; avatarUrl?: string }> = {};
+              for (const c of ucData.characters) owned[c.characterId] = { level: c.level ?? 1, exp: c.exp ?? 0, avatarUrl: c.avatarUrl };
+              setUserCharacters(owned);
+            }
+            if (usData.ok && Array.isArray(usData.spells)) {
+              const newUserSpells: Record<string, string[]> = {};
+              for (const entry of usData.spells) {
+                if (!newUserSpells[entry.characterId]) newUserSpells[entry.characterId] = [];
+                newUserSpells[entry.characterId].push(entry.spellId);
               }
-            }).catch(() => {});
+              setUserSpells(newUserSpells);
+              // Rebuild party with the freshest spell data
+              setPlayerParty(buildParty(selectedCharIds, cfg, newUserSpells));
+            }
+          }).catch(() => {});
         }
         setLoading(false);
       })
@@ -785,6 +813,7 @@ export default function CampClient() {
                               ? selectedCharIds.filter((id) => id !== ch.id)
                               : [...selectedCharIds, ch.id],
                             cfg,
+                            userSpells,
                           ));
                         }}
                       >
