@@ -711,9 +711,9 @@ export default function CampClient() {
               <div className="camp-result-icon" />
               <div className="camp-result-title">Victory</div>
               <div className="camp-result-sub">All waves cleared!</div>
-              <button className="camp-btn primary" onClick={resetToIdle}>
-                Back to camp
-              </button>
+              <a className="camp-btn primary" href="/auth/campaigns">
+                Back to quests
+              </a>
             </div>
           </div>
         ) : phase === "lost" ? (
@@ -729,9 +729,9 @@ export default function CampClient() {
                   "you suck, loser"
                 )}
               </div>
-              <button className="camp-btn primary" onClick={resetToIdle}>
-                Try again
-              </button>
+              <a className="camp-btn primary" href="/auth/campaigns">
+                Back to quests
+              </a>
             </div>
           </div>
         ) : (
