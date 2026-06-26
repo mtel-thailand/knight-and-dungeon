@@ -88,6 +88,8 @@ function CharacterAvatar({ charId, name, animations }: { charId: string; name: s
 
 type Phase = "idle" | "fighting" | "reward" | "won" | "lost";
 
+/** EXP awarded per enemy killed, credited per-killer (from engine expGains). */
+
 /**
  * Build a player party from selected character IDs.
  * Each character is positioned in a deploy hex slot.
@@ -152,6 +154,9 @@ export default function CampClient() {
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>(["blue"]);
   const [userCharacters, setUserCharacters] = useState<Record<string, { level: number; exp: number; avatarUrl?: string }>>({});
   const [userSpells, setUserSpells] = useState<Record<string, string[]>>({});
+  /** Per-character EXP accumulator (absolute, not per-wave delta), kept in a ref so
+   *  the onWaveEnd callback (which has a fixed [result] dep) always reads the latest value. */
+  const charExpRef = useRef<Record<string, number>>({});
   const [livePlayerHp, setLivePlayerHp] = useState<Record<string, number>>({});
   const [resolvingWave, setResolvingWave] = useState(false);
 
@@ -483,6 +488,42 @@ export default function CampClient() {
 
       setPlayerParty(nextParty);
 
+      // ── EXP award: survivors earn EXP from kills they scored ─────────
+      if (userId) {
+        for (const m of nextParty) {
+          const unitId = posToId.get(`${m.position.q},${m.position.r}`);
+          const earned = (unitId && curResult.expGains?.[unitId]) || 0;
+          if (earned <= 0) continue;
+          const charId = m.characterId;
+          charExpRef.current[charId] =
+            (charExpRef.current[charId] ?? (userCharacters[charId]?.exp ?? 0)) + earned;
+          fetch("/api/user/characters", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId,
+              characterId: charId,
+              exp: charExpRef.current[charId],
+            }),
+          }).catch(() => {});
+        }
+        // Optimistically update the live display so the idle screen shows new exp.
+        setUserCharacters((prev) => {
+          const next = { ...prev };
+          for (const m of nextParty) {
+            const unitId = posToId.get(`${m.position.q},${m.position.r}`);
+            const earned = (unitId && curResult.expGains?.[unitId]) || 0;
+            if (earned <= 0) continue;
+            const charId = m.characterId;
+            next[charId] = {
+              ...(next[charId] ?? { level: 1, exp: 0 }),
+              exp: charExpRef.current[charId],
+            };
+          }
+          return next;
+        });
+      }
+
       if (curWave < camp.waveCount) {
         const choices = pickRewardChoices(configRef.current?.battleRewards ?? []);
         if (choices.length > 0) {
@@ -543,6 +584,11 @@ export default function CampClient() {
       setError("No playable characters with battle stats.");
       return;
     }
+    // Seed the EXP accumulator with each character's current absolute EXP
+    charExpRef.current = {};
+    for (const m of party) {
+      charExpRef.current[m.characterId] = userCharacters[m.characterId]?.exp ?? 0;
+    }
     setError(null);
     setLivePlayerHp({});
     pausedRef.current = false;
@@ -585,6 +631,11 @@ export default function CampClient() {
             : null) ?? null;
         setActiveCampaign(camp);
         setPlayerParty(buildParty(selectedCharIds, cfg, userSpells));
+        // Seed EXP accumulator with current user character EXP values
+        charExpRef.current = {};
+        for (const id of selectedCharIds) {
+          charExpRef.current[id] = userCharacters[id]?.exp ?? 0;
+        }
         // Re-fetch user's owned characters AND purchased spells
         if (userId) {
           Promise.all([
